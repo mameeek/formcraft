@@ -20,7 +20,7 @@ export async function PUT(req: NextRequest) {
 
   if (products.length > 0) {
     const { error } = await supabase.from('products').insert(
-      products.map(p => ({ id: p.id, data: p }))
+      products.map(p => ({ id: p.id, data: p })) as any
     )
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
