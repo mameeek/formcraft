@@ -3,24 +3,28 @@ import { supabase } from '@/lib/db'
 import type { FormConfig } from '@/types'
 
 export const dynamic = 'force-dynamic'
-
+//debug
 export async function GET() {
-  const { data, error } = await supabase
-    .from('form_config')
-    .select('data')
-    .eq('id', 'main')
-    .maybeSingle()
-  //debug
-console.log("SUPABASE URL:", process.env.SUPABASE_DATABASE_URL)
-  //end debug
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  return NextResponse.json(data?.data ?? null, {
-    headers: { 'Cache-Control': 'no-store' }
-  })
+  return Response.json({ test: "HELLO_DEBUG_123" })
 }
+// export async function GET() {
+//   const { data, error } = await supabase
+//     .from('form_config')
+//     .select('data')
+//     .eq('id', 'main')
+//     .maybeSingle()
+//   //debug
+// console.log("SUPABASE URL:", process.env.SUPABASE_DATABASE_URL)
+//   //end debug
+//   if (error) {
+//     return NextResponse.json({ error: error.message }, { status: 500 })
+//   }
+
+//   return NextResponse.json(data?.data ?? null, {
+//     headers: { 'Cache-Control': 'no-store' }
+//   })
+// }
+//
 //DEBUG
 export async function PUT(req: NextRequest) {
   const form = await req.json()
