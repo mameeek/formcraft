@@ -1,6 +1,5 @@
 'use client'
-
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAppStore } from '@/store'
@@ -15,16 +14,14 @@ const TABS = [
   { id: 'settings', label: '⚙️ ตั้งค่า' },
 ]
 
-export default function EditorPage() {
+function EditorContent() {
   const searchParams = useSearchParams()
   const [tab, setTab] = useState(searchParams.get('tab') || 'build')
   const { form, setForm, saveForm, products, setProducts, saveProducts } = useAppStore()
-
   useEffect(() => {
     const t = searchParams.get('tab')
     if (t) setTab(t)
   }, [searchParams])
-
   return (
     <div style={{ padding: '32px 36px' }} className="animate-fadeUp">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
@@ -36,12 +33,18 @@ export default function EditorPage() {
           <Btn variant="primary" size="lg">👁️ ดูตัวอย่างฟอร์ม</Btn>
         </Link>
       </div>
-
       <TabBar tabs={TABS} active={tab} setActive={setTab} />
-
       {tab === 'build' && <FormBuilder form={form} setForm={(f) => saveForm(f)} />}
       {tab === 'products' && <ProductManager products={products} setProducts={(p) => saveProducts(p)} />}
       {tab === 'settings' && <FormSettings form={form} setForm={(f) => saveForm(f)} />}
     </div>
+  )
+}
+
+export default function EditorPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <EditorContent />
+    </Suspense>
   )
 }
