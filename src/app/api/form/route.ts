@@ -10,7 +10,7 @@ export async function GET() {
     .single()
 
   if (error || !data) return NextResponse.json(null)
-  return NextResponse.json(data.data)
+  return NextResponse.json(data)
 }
 
 export async function PUT(req: NextRequest) {
