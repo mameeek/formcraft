@@ -132,3 +132,6 @@ export const useCartStore = create<CartStore>()(
     { name: 'formcraft-cart' }
   )
 )
+
+// ─── Exported types ────────────────────────────────────────────────────────────
+export type { AppStore }

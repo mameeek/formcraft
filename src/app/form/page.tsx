@@ -399,7 +399,7 @@ const qMini: React.CSSProperties = { width: 26, height: 26, background: 'rgba(0,
 
 // ─── Info Step ────────────────────────────────────────────────────────────────
 function InfoStep({ form, fieldValues, setFieldValues, shippingMethod, setShippingMethod, errors, onNext, accent, text, subtext, cardBg, cardBorder }: {
-  form: ReturnType<typeof useAppStore>['form']
+  form: AppStore['form']
   fieldValues: Record<string, string>; setFieldValues: (v: Record<string, string>) => void
   shippingMethod: string; setShippingMethod: (v: string) => void
   errors: Record<string, string>; onNext: () => void
@@ -691,7 +691,7 @@ function CartStep({ items, updateQty, removeItem, subtotal, shippingCost, shippi
 
 // ─── Payment Step ─────────────────────────────────────────────────────────────
 function PaymentStep({ form, total, slipFile, setSlipFile, onSubmit, onBack, accent, text, subtext, cardBg, cardBorder }: {
-  form: ReturnType<typeof useAppStore>['form']
+  form: AppStore['form']
   total: number; slipFile: File | null; setSlipFile: (f: File | null) => void
   onSubmit: () => void; onBack: () => void
   accent: string; text: string; subtext: string; cardBg: string; cardBorder: string

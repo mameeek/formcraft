@@ -29,7 +29,7 @@ function SlipLightbox({ src, onClose }: { src: string; onClose: () => void }) {
 function SubmissionRow({ sub, onConfirm, form }: {
   sub: Submission
   onConfirm: (id: string, status: PaymentStatus, note?: string) => void
-  form: ReturnType<typeof useAppStore>['form']
+  form: AppStore['form']
 }) {
   const [expanded, setExpanded] = useState(false)
   const [note, setNote] = useState(sub.paymentNote || '')
@@ -155,7 +155,7 @@ function SubmissionRow({ sub, onConfirm, form }: {
 }
 
 // ─── Answers view (field responses) ───────────────────────────────────────────
-function AnswersView({ submissions, form }: { submissions: Submission[]; form: ReturnType<typeof useAppStore>["form"] }) {
+function AnswersView({ submissions, form }: { submissions: Submission[]; form: AppStore["form"] }) {
   const allFields = form.sections.flatMap(s => s.fields)
   const [filter, setFilter] = useState("")
 
@@ -206,8 +206,8 @@ function AnswersView({ submissions, form }: { submissions: Submission[]; form: R
 // ─── CSV preview ───────────────────────────────────────────────────────────────
 function CsvView({ submissions, products, form }: {
   submissions: Submission[]
-  products: ReturnType<typeof useAppStore>["products"]
-  form: ReturnType<typeof useAppStore>["form"]
+  products: AppStore["products"]
+  form: AppStore["form"]
 }) {
   const [filter, setFilter] = useState("")
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "confirmed" | "rejected">("all")
@@ -294,7 +294,7 @@ function CsvView({ submissions, products, form }: {
 }
 
 // ─── Summary ───────────────────────────────────────────────────────────────────
-function SummaryView({ submissions, products }: { submissions: Submission[]; products: ReturnType<typeof useAppStore>['products'] }) {
+function SummaryView({ submissions, products }: { submissions: Submission[]; products: AppStore['products'] }) {
   const confirmed = submissions.filter(s => s.paymentStatus === 'confirmed')
   const pending = submissions.filter(s => s.paymentStatus === 'pending')
   const totalRevenue = confirmed.reduce((s, sub) => s + (sub.totalAmount || 0), 0)
