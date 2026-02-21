@@ -8,7 +8,10 @@ import { uid } from '@/lib/utils'
 
 // ─── Helper ────────────────────────────────────────────────────────────────────
 async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts })
+  const res = await fetch(url, { 
+    headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+            ...opts })
   if (!res.ok) throw new Error(`${opts?.method || 'GET'} ${url} → ${res.status}`)
   return res.json()
 }
