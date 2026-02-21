@@ -13,7 +13,8 @@ export function getSupabase() {
   const match = dbUrl.match(/@db\.([^.]+)\.supabase\.co/)
              || dbUrl.match(/postgres\.([^:@]+)[:@]/)
   const url = match ? `https://${match[1]}.supabase.co` : ''
-
+console.log('DB_URL masked:', dbUrl.replace(/:([^@]+)@/, ':***@'))
+console.log('Parsed URL:', url)
   if (!url || !key) {
     throw new Error(`Cannot parse Supabase URL from: "${dbUrl.replace(/:([^@]+)@/, ':***@')}"`)
   }
