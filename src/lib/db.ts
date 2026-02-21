@@ -6,7 +6,7 @@ let _supabase: ReturnType<typeof createClient> | null = null
 export function getSupabase() {
   if (_supabase) return _supabase
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const url = process.env.SUPABASE_DATABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
