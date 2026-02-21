@@ -42,27 +42,30 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   loading: false,
   error: null,
   dbConnected: false,
-
+// DEBUG
   loadFromDB: async () => {
-    set({ loading: true, error: null })
-    try {
-      const [products, form, submissions] = await Promise.all([
-        apiFetch<Product[]>('/api/products').catch(() => null),
-        apiFetch<FormConfig | null>('/api/form').catch(() => null),
-        apiFetch<Submission[]>('/api/submissions').catch(() => null),
-      ])
-      set({
-        products: products && products.length > 0 ? products : defaultProducts,
-        form: form ?? defaultForm,
-        submissions: submissions ?? [],
-        loading: false,
-        dbConnected: true,
-      })
-    } catch {
-      set({ loading: false, error: 'ไม่สามารถเชื่อมต่อ Database ได้', dbConnected: false })
-    }
-  },
-
+  console.log('🔄 loadFromDB called')
+  set({ loading: true, error: null })
+  try {
+    const [products, form, submissions] = await Promise.all([
+      apiFetch<Product[]>('/api/products').catch((e) => { console.error('❌ products:', e); return null }),
+      apiFetch<FormConfig | null>('/api/form').catch((e) => { console.error('❌ form:', e); return null }),
+      apiFetch<Submission[]>('/api/submissions').catch((e) => { console.error('❌ submissions:', e); return null }),
+    ])
+    console.log('✅ loaded:', { products, form, submissions })
+    set({
+      products: products && products.length > 0 ? products : defaultProducts,
+      form: form ?? defaultForm,
+      submissions: submissions ?? [],
+      loading: false,
+      dbConnected: true,
+    })
+  } catch (e) {
+    console.error('❌ loadFromDB failed:', e)
+    set({ loading: false, error: 'ไม่สามารถเชื่อมต่อ Database ได้', dbConnected: false })
+  }
+},
+// END DEBUG
   setProducts: (products) => set({ products }),
 
   saveProducts: async (products) => {
