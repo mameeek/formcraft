@@ -9,8 +9,12 @@ export async function GET() {
     .eq('id', 'main')
     .single()
 
-  if (error || !data) return NextResponse.json(null)
-  return NextResponse.json((data as any).data)
+  if (error || !data) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(
+    (data || []).map((r: any) => r.data),
+    { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+  )
+}
 }
 
 export async function PUT(req: NextRequest) {
