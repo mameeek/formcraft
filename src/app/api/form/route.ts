@@ -10,7 +10,9 @@ export async function GET() {
     .select('data')
     .eq('id', 'main')
     .maybeSingle()
-
+  //debug
+console.log("SUPABASE URL:", process.env.SUPABASE_DATABASE_URL)
+  //end debug
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
