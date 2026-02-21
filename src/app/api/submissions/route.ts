@@ -28,7 +28,10 @@ export async function GET() {
     submittedAt:        row.submitted_at,
   }))
 
-  return NextResponse.json(submissions)
+  return NextResponse.json(
+    (data || []).map((r: any) => r.data),
+    { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
+  )
 }
 
 export async function POST(req: NextRequest) {
