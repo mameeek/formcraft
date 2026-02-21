@@ -11,7 +11,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       payment_status:       status,
       payment_confirmed_at: new Date().toISOString(),
       payment_note:         note || null,
-    })
+    } as any)
     .eq('id', params.id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
