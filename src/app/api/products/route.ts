@@ -9,7 +9,7 @@ export async function GET() {
     .order('created_at', { ascending: true })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json((data || []).map(r => r.data))
+  return NextResponse.json((data || []).map((r: any) => r.data))
 }
 
 export async function PUT(req: NextRequest) {
