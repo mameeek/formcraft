@@ -17,7 +17,10 @@ const TABS = [
 function EditorContent() {
   const searchParams = useSearchParams()
   const [tab, setTab] = useState(searchParams.get('tab') || 'build')
-  const { form, setForm, saveForm, products, setProducts, saveProducts } = useAppStore()
+  const { form, setForm, saveForm, products, setProducts, saveProducts, loadFromDB } = useAppStore()
+  useEffect(() => {
+    loadFromDB()
+  }, [])
   useEffect(() => {
     const t = searchParams.get('tab')
     if (t) setTab(t)
