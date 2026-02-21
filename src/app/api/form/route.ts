@@ -9,12 +9,15 @@ export async function GET() {
     .from('form_config')
     .select('data')
     .eq('id', 'main')
-    .single()
-  if (error || !data) return NextResponse.json(null)
-  return NextResponse.json(
-    (data as any).data,
-    { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
-  )
+    .maybeSingle()
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json(data?.data ?? null, {
+    headers: { 'Cache-Control': 'no-store' }
+  })
 }
 
 export async function PUT(req: NextRequest) {
