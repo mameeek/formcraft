@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/db'
 import type { Submission } from '@/types'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   const { data, error } = await supabase
     .from('submissions')
     .select('*')
     .order('submitted_at', { ascending: false })
-
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
   const submissions = (data || []).map((row: any) => ({
     id:                 row.id,
     customerName:       row.customer_name,
@@ -27,9 +27,8 @@ export async function GET() {
     paymentNote:        row.payment_note,
     submittedAt:        row.submitted_at,
   }))
-
   return NextResponse.json(
-    (data || []).map((r: any) => r.data),
+    submissions,
     { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' } }
   )
 }
