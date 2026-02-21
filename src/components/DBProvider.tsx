@@ -5,6 +5,8 @@ import { useAppStore } from '@/store'
 
 export default function DBLoader() {
   const { loadFromDB } = useAppStore()
+  const { error } = useAppStore()
+
   useEffect(() => {
     loadFromDB()
   }, [])
