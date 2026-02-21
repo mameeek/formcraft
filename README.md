@@ -1,19 +1,5 @@
 # ⚡ FormCraft – Next.js Dynamic Order Form Builder
 
-> สร้างขึ้นสำหรับ MWIT Student Committee IT Recruitment Workshop
-
-## 🚀 เริ่มต้นใช้งาน
-
-```bash
-# 1. ติดตั้ง dependencies
-npm install
-
-# 2. รัน development server
-npm run dev
-
-# 3. เปิด http://localhost:3000
-```
-
 ## 📁 โครงสร้างโปรเจกต์
 
 ```
@@ -121,4 +107,3 @@ src/
 - **next/font** – Syne + DM Sans fonts
 
 ---
-*MWIT-SC 34 · IT Recruitment Workshop 2026*
