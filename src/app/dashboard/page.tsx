@@ -6,7 +6,11 @@ import { StatCard, Card, Btn } from '@/components/ui'
 import { fmt } from '@/lib/utils'
 
 export default function DashboardPage() {
-  const { form, submissions, products } = useAppStore()
+  const { form, submissions, products, loadFromDB } = useAppStore()
+  
+  useEffect(() => {
+    loadFromDB()
+  }, [])
 
   const totalRevenue = submissions.reduce((s, sub) => s + (sub.totalAmount || 0), 0)
   const todayStr = new Date().toISOString().slice(0, 10)
