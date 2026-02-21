@@ -21,4 +21,16 @@ module.exports = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, max-age=0' },
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Netlify-CDN-Cache-Control', value: 'no-store' },
+        ],
+      },
+    ]
+  },
 }
