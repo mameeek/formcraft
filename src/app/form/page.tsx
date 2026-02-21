@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useAppStore, useCartStore } from '@/store'
 import type { CartItem, FormField, Product, ProductVariant, FieldCondition } from '@/types'
 import { getProductVariants, fmt, buildReceiptLines } from '@/lib/utils'
@@ -766,7 +766,11 @@ function DoneScreen({ shippingMethod, slipName, text, subtext, cardBorder }: {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function FormPage() {
-  const { form, products, addSubmission } = useAppStore()
+  const { form, products, addSubmission, loadFromDB } = useAppStore()
+    useEffect(() => {
+      loadFromDB()
+    }, [])
+  
   const { items, addItem, updateQty, removeItem, clearCart } = useCartStore()
   const { accent, bg, text, subtext, cardBg, cardBorder } = useTheme()
 
