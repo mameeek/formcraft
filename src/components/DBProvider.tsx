@@ -3,10 +3,8 @@
 import { useEffect } from 'react'
 import { useAppStore } from '@/store'
 
-export function DBProvider({ children }: { children: React.ReactNode }) {
-  const loadFromDB = useAppStore((s) => s.loadFromDB)
-  const error = useAppStore((s) => s.error)
-
+export default function DBLoader() {
+  const { loadFromDB } = useAppStore()
   useEffect(() => {
     loadFromDB()
   }, [])
