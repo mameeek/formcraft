@@ -26,5 +26,5 @@ export async function PUT(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json((data || []).map((r: any) => r.data))
+  return NextResponse.json({ ok: true })
 }
