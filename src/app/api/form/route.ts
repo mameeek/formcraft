@@ -10,7 +10,7 @@ export async function GET() {
     .single()
 
   if (error || !data) return NextResponse.json(null)
-  return NextResponse.json(data)
+  return NextResponse.json((data as any).data)
 }
 
 export async function PUT(req: NextRequest) {
@@ -18,7 +18,8 @@ export async function PUT(req: NextRequest) {
 
   const { error } = await supabase
     .from('form_config')
-    .upsert({ id: 'main', data: form, updated_at: new Date().toISOString() })
+    .upsert({ id: 'main', data: form, updated_at: new Date().toISOString() } as any)
+
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
