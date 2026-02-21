@@ -10,7 +10,7 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const submissions = (data || []).map(row => ({
+  const submissions = (data || []).map((row: any) => ({
     id:                 row.id,
     customerName:       row.customer_name,
     customerPhone:      row.customer_phone,
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     shipping:        body.shipping      || 0,
     total_amount:    body.totalAmount   || 0,
     payment_slip:    body.paymentSlip   || null,
-  })
+  } as any)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ id }, { status: 201 })
