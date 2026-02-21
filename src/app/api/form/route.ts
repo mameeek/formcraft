@@ -19,9 +19,11 @@ export async function GET() {
     headers: { 'Cache-Control': 'no-store' }
   })
 }
-
+//DEBUG
 export async function PUT(req: NextRequest) {
   const form = await req.json()
+
+  console.log("FORM RECEIVED:", JSON.stringify(form, null, 2))
 
   const { error } = await supabase
     .from('form_config')
@@ -31,8 +33,10 @@ export async function PUT(req: NextRequest) {
     )
 
   if (error) {
+    console.log("UPSERT ERROR:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true })
 }
+//END DEBUG
