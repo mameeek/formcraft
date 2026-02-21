@@ -9,7 +9,7 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     loadFromDB()
-  }, [loadFromDB])
+  }, [])
 
   return (
     <>
