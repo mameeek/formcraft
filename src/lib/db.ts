@@ -1,7 +1,13 @@
-import { neon } from '@neondatabase/serverless'
+import { createClient } from '@supabase/supabase-js'
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is not set')
+const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey  = process.env.SUPABASE_SERVICE_ROLE_KEY  // server-side only (never expose to browser)
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
 }
 
-export const sql = neon(process.env.DATABASE_URL)
+// Server-side client (used in API routes only)
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: { persistSession: false },
+})

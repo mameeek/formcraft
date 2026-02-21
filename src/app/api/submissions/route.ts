@@ -1,66 +1,54 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@/lib/db'
+import { supabase } from '@/lib/db'
 import type { Submission } from '@/types'
 
-// GET /api/submissions — fetch all submissions
 export async function GET() {
-  try {
-    const rows = await sql`
-      SELECT
-        id,
-        customer_name    AS "customerName",
-        customer_phone   AS "customerPhone",
-        customer_email   AS "customerEmail",
-        field_values     AS "fieldValues",
-        items,
-        shipping_method  AS "shippingMethod",
-        subtotal,
-        shipping,
-        total_amount     AS "totalAmount",
-        payment_slip     AS "paymentSlip",
-        payment_status   AS "paymentStatus",
-        payment_confirmed_at AS "paymentConfirmedAt",
-        payment_note     AS "paymentNote",
-        submitted_at     AS "submittedAt"
-      FROM submissions
-      ORDER BY submitted_at DESC
-    `
-    return NextResponse.json(rows)
-  } catch (e) {
-    console.error('GET /api/submissions error:', e)
-    return NextResponse.json({ error: 'Database error' }, { status: 500 })
-  }
+  const { data, error } = await supabase
+    .from('submissions')
+    .select('*')
+    .order('submitted_at', { ascending: false })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  const submissions = (data || []).map(row => ({
+    id:                 row.id,
+    customerName:       row.customer_name,
+    customerPhone:      row.customer_phone,
+    customerEmail:      row.customer_email,
+    fieldValues:        row.field_values,
+    items:              row.items,
+    shippingMethod:     row.shipping_method,
+    subtotal:           row.subtotal,
+    shipping:           row.shipping,
+    totalAmount:        row.total_amount,
+    paymentSlip:        row.payment_slip,
+    paymentStatus:      row.payment_status,
+    paymentConfirmedAt: row.payment_confirmed_at,
+    paymentNote:        row.payment_note,
+    submittedAt:        row.submitted_at,
+  }))
+
+  return NextResponse.json(submissions)
 }
 
-// POST /api/submissions — create new submission
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json() as Omit<Submission, 'id' | 'submittedAt' | 'paymentStatus'>
-    const id = crypto.randomUUID().slice(0, 9)
+  const body = await req.json() as Omit<Submission, 'id' | 'submittedAt' | 'paymentStatus'>
+  const id = crypto.randomUUID().slice(0, 9)
 
-    await sql`
-      INSERT INTO submissions (
-        id, customer_name, customer_phone, customer_email,
-        field_values, items, shipping_method,
-        subtotal, shipping, total_amount, payment_slip
-      ) VALUES (
-        ${id},
-        ${body.customerName || ''},
-        ${body.customerPhone || ''},
-        ${body.customerEmail || ''},
-        ${JSON.stringify(body.fieldValues || {})}::jsonb,
-        ${JSON.stringify(body.items || [])}::jsonb,
-        ${body.shippingMethod || 'pickup'},
-        ${body.subtotal || 0},
-        ${body.shipping || 0},
-        ${body.totalAmount || 0},
-        ${body.paymentSlip || null}
-      )
-    `
+  const { error } = await supabase.from('submissions').insert({
+    id,
+    customer_name:   body.customerName  || '',
+    customer_phone:  body.customerPhone || '',
+    customer_email:  body.customerEmail || '',
+    field_values:    body.fieldValues   || {},
+    items:           body.items         || [],
+    shipping_method: body.shippingMethod || 'pickup',
+    subtotal:        body.subtotal      || 0,
+    shipping:        body.shipping      || 0,
+    total_amount:    body.totalAmount   || 0,
+    payment_slip:    body.paymentSlip   || null,
+  })
 
-    return NextResponse.json({ id }, { status: 201 })
-  } catch (e) {
-    console.error('POST /api/submissions error:', e)
-    return NextResponse.json({ error: 'Database error' }, { status: 500 })
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ id }, { status: 201 })
 }

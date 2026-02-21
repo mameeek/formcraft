@@ -1,33 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@/lib/db'
+import { supabase } from '@/lib/db'
 import type { FormConfig } from '@/types'
 
-// GET /api/form
 export async function GET() {
-  try {
-    const rows = await sql`SELECT data FROM form_config WHERE id = 'main' LIMIT 1`
-    if (!rows.length) return NextResponse.json(null)
-    return NextResponse.json(rows[0].data)
-  } catch (e) {
-    console.error('GET /api/form error:', e)
-    return NextResponse.json({ error: 'Database error' }, { status: 500 })
-  }
+  const { data, error } = await supabase
+    .from('form_config')
+    .select('data')
+    .eq('id', 'main')
+    .single()
+
+  if (error || !data) return NextResponse.json(null)
+  return NextResponse.json(data.data)
 }
 
-// PUT /api/form — save form config
 export async function PUT(req: NextRequest) {
-  try {
-    const form = await req.json() as FormConfig
+  const form = await req.json() as FormConfig
 
-    await sql`
-      INSERT INTO form_config (id, data)
-      VALUES ('main', ${JSON.stringify(form)}::jsonb)
-      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
-    `
+  const { error } = await supabase
+    .from('form_config')
+    .upsert({ id: 'main', data: form, updated_at: new Date().toISOString() })
 
-    return NextResponse.json({ ok: true })
-  } catch (e) {
-    console.error('PUT /api/form error:', e)
-    return NextResponse.json({ error: 'Database error' }, { status: 500 })
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ ok: true })
 }

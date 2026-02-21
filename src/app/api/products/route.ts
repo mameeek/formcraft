@@ -1,43 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { sql } from '@/lib/db'
+import { supabase } from '@/lib/db'
 import type { Product } from '@/types'
 
-// GET /api/products
 export async function GET() {
-  try {
-    const rows = await sql`SELECT data FROM products ORDER BY created_at ASC`
-    return NextResponse.json(rows.map((r: { data: Product }) => r.data))
-  } catch (e) {
-    console.error('GET /api/products error:', e)
-    return NextResponse.json({ error: 'Database error' }, { status: 500 })
-  }
+  const { data, error } = await supabase
+    .from('products')
+    .select('data')
+    .order('created_at', { ascending: true })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json((data || []).map(r => r.data))
 }
 
-// PUT /api/products — replace all products (admin save)
 export async function PUT(req: NextRequest) {
-  try {
-    const products = await req.json() as Product[]
+  const products = await req.json() as Product[]
 
-    // Upsert all products
-    for (const p of products) {
-      await sql`
-        INSERT INTO products (id, data)
-        VALUES (${p.id}, ${JSON.stringify(p)}::jsonb)
-        ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
-      `
-    }
+  // Delete all then re-insert (simplest approach for full replace)
+  await supabase.from('products').delete().neq('id', '__none__')
 
-    // Delete products no longer in list
-    const ids = products.map(p => p.id)
-    if (ids.length > 0) {
-      await sql`DELETE FROM products WHERE id != ALL(${ids}::text[])`
-    } else {
-      await sql`DELETE FROM products`
-    }
-
-    return NextResponse.json({ ok: true })
-  } catch (e) {
-    console.error('PUT /api/products error:', e)
-    return NextResponse.json({ error: 'Database error' }, { status: 500 })
+  if (products.length > 0) {
+    const { error } = await supabase.from('products').insert(
+      products.map(p => ({ id: p.id, data: p }))
+    )
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  return NextResponse.json({ ok: true })
 }
