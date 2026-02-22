@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { Product, ProductVariant } from '@/types'
 import ImageSlider from '@/components/ui/ImageSlider'
 import { getProductVariants, fmt } from '@/lib/utils'
@@ -27,14 +27,27 @@ export default function ConfigureModal({ prod, allProducts, accentColor, onAdd, 
     onAdd({ selections: { ...selections }, qty })
   }
 
-  // Gather all images (product + set sub-products)
-  const allImages: string[] = [...(prod.images || [])]
+const activeImages = useMemo(() => {
+  // ถ้าเลือก variant ที่มีรูป ให้ใช้รูปนั้นก่อน
+  for (const v of prod.variants) {
+    const sel = selections[v.id]
+    if (sel) {
+      const opt = v.options.find(o => o.label === sel)
+      if (opt?.image) {
+        return [opt.image, ...prod.images.filter(i => i !== opt.image)]
+      }
+    }
+  }
+  // fallback: รูปสินค้าปกติ + รูปในเซ็ต
+  const imgs: string[] = [...(prod.images || [])]
   if (prod.type === 'set') {
     ;(prod.setItems || []).forEach(item => {
       const sp = allProducts.find(p => p.id === item.productId)
-      if (sp?.images) allImages.push(...sp.images)
+      if (sp?.images) imgs.push(...sp.images)
     })
   }
+  return imgs
+}, [prod, selections, allProducts])
 
   return (
     <div
@@ -55,12 +68,12 @@ export default function ConfigureModal({ prod, allProducts, accentColor, onAdd, 
       }}>
         {/* Image slider at top */}
         <ImageSlider
-          images={allImages}
+          images={activeImages}
           alt={prod.name}
           height={260}
           fallbackEmoji={prod.type === 'set' ? '🎁' : '📦'}
           rounded={false}
-        />
+          />
 
         <div style={{ padding: '22px 24px 32px' }}>
           {/* Header */}
