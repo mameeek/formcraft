@@ -3,6 +3,7 @@ import { supabase } from '@/lib/db'
 import type { FormConfig } from '@/types'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export async function GET() {
   const { data, error } = await supabase
