@@ -352,8 +352,53 @@ const th: React.CSSProperties = { padding: '10px 12px', textAlign: 'left', borde
 const td: React.CSSProperties = { padding: '10px 12px', color: 'var(--text-secondary)', verticalAlign: 'top' }
 
 export default function SubmissionsPage() {
-  const { submissions, form, products, updateSubmissionPayment } = useAppStore()
+  const { submissions, form, products, updateSubmissionPayment, loading } = useAppStore()
   const [tab, setTab] = useState('table')
+
+  if (loading) return (
+    <div style={{ padding: '32px 36px' }} className="animate-fadeUp">
+      <style>{`@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }`}</style>
+      {/* Header skeleton */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ width: 160, height: 28, background: 'rgba(255,255,255,0.07)', borderRadius: 6, animation: 'pulse 1.4s ease-in-out infinite' }} />
+          <div style={{ width: 200, height: 14, background: 'rgba(255,255,255,0.05)', borderRadius: 6, animation: 'pulse 1.4s ease-in-out infinite' }} />
+        </div>
+        <div style={{ width: 120, height: 36, background: 'rgba(255,255,255,0.07)', borderRadius: 8, animation: 'pulse 1.4s ease-in-out infinite' }} />
+      </div>
+
+      {/* Tab skeleton */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+        {[80, 70, 90, 60].map((w, i) => (
+          <div key={i} style={{ width: w, height: 32, background: 'rgba(255,255,255,0.07)', borderRadius: 6, animation: 'pulse 1.4s ease-in-out infinite' }} />
+        ))}
+      </div>
+
+      {/* Table skeleton */}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-deep)' }}>
+              {['วันที่', 'ชื่อ', 'เบอร์', 'สินค้า', 'จัดส่ง', 'ยอดรวม', 'สถานะ', ''].map(h => (
+                <th key={h} style={th}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...Array(6)].map((_, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                {[60, 100, 80, 140, 60, 60, 80, 20].map((w, j) => (
+                  <td key={j} style={{ padding: '14px 12px' }}>
+                    <div style={{ width: w, height: 12, background: 'rgba(255,255,255,0.06)', borderRadius: 4, animation: 'pulse 1.4s ease-in-out infinite' }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 
   return (
     <div style={{ padding: '32px 36px' }} className="animate-fadeUp">
