@@ -410,12 +410,8 @@ function InfoStep({ form, fieldValues, setFieldValues, shippingMethod, setShippi
   form: AppStore['form']
   fieldValues: Record<string, string>; setFieldValues: (v: Record<string, string>) => void
   shippingMethod: string; setShippingMethod: (v: string) => void
-  errors: Record<string, string>; onNext={() => { 
-  if (validate()) { 
-    setInfoValid(true)
-    setStep('products') 
-  } 
-}}
+  errors: Record<string, string>; onNext: () => void
+
   accent: string; text: string; subtext: string; cardBg: string; cardBorder: string
 }) {
   const inputSt: React.CSSProperties = {
