@@ -16,7 +16,7 @@ export function DBProvider({ children }: { children: React.ReactNode }) {
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       {loading && (
         <div style={{
-          position: 'fixed', top: 16, right: 20, zIndex: 9999,
+          position: 'fixed', bottom: 16, left: 20, zIndex: 9999,
           display: 'flex', alignItems: 'center', gap: 8,
           background: 'rgba(255,255,255,0.07)', borderRadius: 20,
           padding: '6px 14px', backdropFilter: 'blur(8px)',
