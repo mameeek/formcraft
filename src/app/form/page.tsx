@@ -132,8 +132,9 @@ function ModalImageSlider({ images, name }: { images: string[]; name: string }) 
   const validImgs = images.filter(Boolean)
 
   // reset if images change (variant switch)
-  const prev = useRef(images)
-  if (prev.current !== images) { prev.current = images; if (current >= validImgs.length) setCurrent(0) }
+    useEffect(() => {
+      setCurrent(0)
+    }, [images])
 
   if (!validImgs.length) return (
     <div style={{ height: 240, background: 'rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 52 }}>📦</div>
