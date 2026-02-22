@@ -32,19 +32,25 @@ const STEPS = ['info', 'products', 'cart', 'payment'] as const
 type Step = typeof STEPS[number]
 const STEP_LABELS: Record<Step, string> = { info: 'ข้อมูล', products: 'สินค้า', cart: 'ตะกร้า', payment: 'ชำระเงิน' }
 
-function StepTabs({ current, setCurrent, accent, subtext }: {
+function StepTabs({ current, setCurrent, accent, subtext, maxReached }: {
   current: Step; setCurrent: (s: Step) => void; accent: string; subtext: string
+  maxReached: number  // index สูงสุดที่ไปได้
 }) {
   const idx = STEPS.indexOf(current)
   return (
     <div style={{ display: 'flex', marginTop: 12 }}>
       {STEPS.map((s, i) => (
-        <button key={s} onClick={() => setCurrent(s)} style={{
-          flex: 1, textAlign: 'center', fontSize: 11, fontWeight: i <= idx ? 700 : 400,
-          color: i <= idx ? accent : subtext, paddingBottom: 8, background: 'none', border: 'none',
-          borderBottom: `2px solid ${i <= idx ? accent : 'rgba(0,0,0,0.1)'}`,
-          transition: 'all 0.25s', cursor: 'pointer',
-        }}>
+        <button key={s} 
+          onClick={() => i <= maxReached && setCurrent(s)} 
+          disabled={i > maxReached}
+          style={{
+            flex: 1, textAlign: 'center', fontSize: 11, fontWeight: i <= idx ? 700 : 400,
+            color: i <= idx ? accent : i > maxReached ? 'rgba(0,0,0,0.2)' : subtext,
+            paddingBottom: 8, background: 'none', border: 'none',
+            borderBottom: `2px solid ${i <= idx ? accent : 'rgba(0,0,0,0.1)'}`,
+            transition: 'all 0.25s', 
+            cursor: i <= maxReached ? 'pointer' : 'not-allowed',
+          }}>
           {STEP_LABELS[s]}
         </button>
       ))}
