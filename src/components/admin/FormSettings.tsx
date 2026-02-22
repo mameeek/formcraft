@@ -16,19 +16,25 @@ export default function FormSettings({ form, setForm }: { form: FormConfig; setF
   const update = (key: keyof FormConfig, val: unknown) => setForm({ ...form, [key]: val })
   const updateShipping = (key: string, val: unknown) => setForm({ ...form, shipping: { ...form.shipping, [key]: val } })
 
-  const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const url = await readAsDataURL(file)
-    if (url) update('bannerImage', url)
-  }
+const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  const formData = new FormData()
+  formData.append('files', file)
+  const res = await fetch('/api/upload', { method: 'POST', body: formData })
+  const { urls } = await res.json()
+  if (urls?.[0]) update('bannerImage', urls[0])
+}
 
-  const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const url = await readAsDataURL(file)
-    if (url) update('qrCodeImage', url)
-  }
+const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  const formData = new FormData()
+  formData.append('files', file)
+  const res = await fetch('/api/upload', { method: 'POST', body: formData })
+  const { urls } = await res.json()
+  if (urls?.[0]) update('qrCodeImage', urls[0])
+}
 
   return (
     <div style={{ maxWidth: 580, display: 'flex', flexDirection: 'column', gap: 16 }}>
