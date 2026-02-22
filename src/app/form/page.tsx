@@ -32,28 +32,30 @@ const STEPS = ['info', 'products', 'cart', 'payment'] as const
 type Step = typeof STEPS[number]
 const STEP_LABELS: Record<Step, string> = { info: 'ข้อมูล', products: 'สินค้า', cart: 'ตะกร้า', payment: 'ชำระเงิน' }
 
-function StepTabs({ current, setCurrent, accent, subtext, maxReached }: {
+function StepTabs({ current, setCurrent, accent, subtext, canGoTo }: {
   current: Step; setCurrent: (s: Step) => void; accent: string; subtext: string
-  maxReached: number  // index สูงสุดที่ไปได้
+  canGoTo: (s: Step) => boolean
 }) {
   const idx = STEPS.indexOf(current)
   return (
     <div style={{ display: 'flex', marginTop: 12 }}>
-      {STEPS.map((s, i) => (
-        <button key={s} 
-          onClick={() => i <= maxReached && setCurrent(s)} 
-          disabled={i > maxReached}
-          style={{
-            flex: 1, textAlign: 'center', fontSize: 11, fontWeight: i <= idx ? 700 : 400,
-            color: i <= idx ? accent : i > maxReached ? 'rgba(0,0,0,0.2)' : subtext,
-            paddingBottom: 8, background: 'none', border: 'none',
-            borderBottom: `2px solid ${i <= idx ? accent : 'rgba(0,0,0,0.1)'}`,
-            transition: 'all 0.25s', 
-            cursor: i <= maxReached ? 'pointer' : 'not-allowed',
-          }}>
-          {STEP_LABELS[s]}
-        </button>
-      ))}
+      {STEPS.map((s, i) => {
+        const allowed = canGoTo(s)
+        return (
+          <button key={s}
+            onClick={() => allowed && setCurrent(s)}
+            style={{
+              flex: 1, textAlign: 'center', fontSize: 11, fontWeight: i <= idx ? 700 : 400,
+              color: i <= idx ? accent : !allowed ? 'rgba(0,0,0,0.2)' : subtext,
+              paddingBottom: 8, background: 'none', border: 'none',
+              borderBottom: `2px solid ${i <= idx ? accent : 'rgba(0,0,0,0.1)'}`,
+              transition: 'all 0.25s',
+              cursor: allowed ? 'pointer' : 'not-allowed',
+            }}>
+            {STEP_LABELS[s]}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -408,7 +410,12 @@ function InfoStep({ form, fieldValues, setFieldValues, shippingMethod, setShippi
   form: AppStore['form']
   fieldValues: Record<string, string>; setFieldValues: (v: Record<string, string>) => void
   shippingMethod: string; setShippingMethod: (v: string) => void
-  errors: Record<string, string>; onNext: () => void
+  errors: Record<string, string>; onNext={() => { 
+  if (validate()) { 
+    setInfoValid(true)
+    setStep('products') 
+  } 
+}}
   accent: string; text: string; subtext: string; cardBg: string; cardBorder: string
 }) {
   const inputSt: React.CSSProperties = {
@@ -781,6 +788,17 @@ export default function FormPage() {
   const { accent, bg, text, subtext, cardBg, cardBorder } = useTheme()
 
   const [step, setStep] = useState<Step>('info')
+
+  const [infoValid, setInfoValid] = useState(false)
+
+  const canGoTo = (s: Step) => {
+    if (s === 'info') return true
+    if (s === 'products') return infoValid
+    if (s === 'cart') return infoValid
+    if (s === 'payment') return infoValid && items.length > 0
+    return false
+  }
+  
   const [fieldValues, setFieldValues]       = useState<Record<string, string>>({})
   const [shippingMethod, setShippingMethod] = useState('pickup')
   const [slipFile, setSlipFile]             = useState<File | null>(null)
@@ -851,7 +869,7 @@ export default function FormPage() {
               </button>
             )}
           </div>
-          {!done && <StepTabs current={step} setCurrent={setStep} accent={accent} subtext={subtext} />}
+          {!done && <StepTabs current={step} setCurrent={setStep} accent={accent} subtext={subtext} canGoTo={canGoTo} />}
         </div>
       </div>
 
@@ -862,7 +880,7 @@ export default function FormPage() {
         ) : step === 'info' ? (
           <InfoStep form={form} fieldValues={fieldValues} setFieldValues={setFieldValues}
             shippingMethod={shippingMethod} setShippingMethod={setShippingMethod}
-            errors={errors} onNext={() => { if (validate()) setStep('products') }}
+            errors={errors} onNext={() => { if (validate()) { setInfoValid(true); setStep('products') } }}
             accent={accent} text={text} subtext={subtext} cardBg={cardBg} cardBorder={cardBorder} />
         ) : step === 'products' ? (
           <ProductsStep products={products} cartItems={items} accent={accent} cardBg={cardBg} cardBorder={cardBorder} text={text} subtext={subtext}
