@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/db'
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 import type { Product } from '@/types'
 
 export async function GET() {
