@@ -42,9 +42,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   loading: false,
   error: null,
   dbConnected: false,
-// DEBUG
   loadFromDB: async () => {
-  console.log('🔄 loadFromDB called')
+  if (get().loading) return  // เพิ่มบรรทัดนี้
   set({ loading: true, error: null })
   try {
     const [products, form, submissions] = await Promise.all([
@@ -52,7 +51,6 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       apiFetch<FormConfig | null>('/api/form').catch((e) => { console.error('❌ form:', e); return null }),
       apiFetch<Submission[]>('/api/submissions').catch((e) => { console.error('❌ submissions:', e); return null }),
     ])
-    console.log('✅ loaded:', { products, form, submissions })
     set({
       products: products && products.length > 0 ? products : defaultProducts,
       form: form ?? defaultForm,
@@ -65,7 +63,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     set({ loading: false, error: 'ไม่สามารถเชื่อมต่อ Database ได้', dbConnected: false })
   }
 },
-// END DEBUG
+  
   setProducts: (products) => set({ products }),
 
   saveProducts: async (products) => {
