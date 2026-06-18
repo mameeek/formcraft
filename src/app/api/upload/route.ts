@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabase } from '@/lib/db'
+import { getStore } from '@netlify/blobs'
 import { uid } from '@/lib/utils'
 
 export async function POST(req: NextRequest) {
@@ -10,22 +10,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
 
-    const supabase = getSupabase()
+    const store = getStore('uploads')
     const urls: string[] = []
 
     for (const file of files) {
       const ext = file.name.split('.').pop() || 'jpg'
-      const filename = `${uid()}.${ext}`
+      const key = `${uid()}.${ext}`
       const bytes = await file.arrayBuffer()
 
-      const { error } = await supabase.storage
-        .from('uploads')
-        .upload(filename, bytes, { contentType: file.type })
+      await store.set(key, bytes)
 
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-      const { data } = supabase.storage.from('uploads').getPublicUrl(filename)
-      urls.push(data.publicUrl)
+      const baseUrl = req.nextUrl.origin
+      urls.push(`${baseUrl}/api/uploads/${key}`)
     }
 
     return NextResponse.json({ urls })

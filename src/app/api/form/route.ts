@@ -1,46 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/db'
+import { getStore } from '@netlify/blobs'
 import type { FormConfig } from '@/types'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export async function GET() {
-  const { data, error } = await supabase
-    .from('form_config')
-    .select('data')
-    .eq('id', 'main')
-    .maybeSingle()
-  //debug
-console.log("SUPABASE URL:", process.env.SUPABASE_DATABASE_URL)
-  //end debug
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  try {
+    const store = getStore('app-data')
+    const form = await store.get('form-config', { type: 'json' }) as FormConfig | null
+    return NextResponse.json(form, { headers: { 'Cache-Control': 'no-store' } })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
-
-  return NextResponse.json(data?.data ?? null, {
-    headers: { 'Cache-Control': 'no-store' }
-  })
 }
 
 export async function PUT(req: NextRequest) {
-  const form = await req.json()
-  //debug
-  console.log("FORM RECEIVED:", JSON.stringify(form, null, 2))
-  //end debug
-
-  const { error } = await supabase
-    .from('form_config')
-    .upsert(
-      { id: 'main', data: form, updated_at: new Date().toISOString() },
-      { onConflict: 'id' }
-    )
-
-  if (error) {
-    console.log("UPSERT ERROR:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  const form = await req.json() as FormConfig
+  try {
+    const store = getStore('app-data')
+    await store.setJSON('form-config', form)
+    return NextResponse.json({ ok: true })
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
-
-  return NextResponse.json({ ok: true })
 }
-
