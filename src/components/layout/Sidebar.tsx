@@ -89,7 +89,7 @@ export default function Sidebar() {
                   <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.4 }}>↗</span>
                 )}
               </div>
-            </Tag>
+            </Link>
           )
         })}
       </nav>
