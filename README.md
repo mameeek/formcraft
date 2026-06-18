@@ -103,6 +103,8 @@ src/
 
 - **Next.js 14** – App Router, Server Components, API Routes
 - **TypeScript** – Full type safety
+
+f  gfhthgfhgf hgfh gfh
 - **Zustand** – State management with persistence (localStorage)
 - **next/image** – Optimized image display
 - **next/font** – Syne + DM Sans fonts
