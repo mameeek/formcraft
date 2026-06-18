@@ -837,11 +837,11 @@ export default function FormPage() {
     const nameF  = allFields.find(f => f.type === 'text' && (f.label.includes('ชื่อ') || f.label.toLowerCase().includes('name')))
     const phoneF = allFields.find(f => f.type === 'tel')
     const emailF = allFields.find(f => f.type === 'email')
-    addSubmission({ customerName: nameF ? (fieldValues[nameF.id] || 'ไม่ระบุ') : 'ไม่ระบุ', customerPhone: phoneF ? (fieldValues[phoneF.id] || '') : '', customerEmail: emailF ? (fieldValues[emailF.id] || '') : '', fieldValues, items, shippingMethod: shippingMethod as 'pickup' | 'delivery', subtotal, shipping: shippingCost, totalAmount: total, paymentSlip: slipData })
+    await addSubmission({ customerName: nameF ? (fieldValues[nameF.id] || 'ไม่ระบุ') : 'ไม่ระบุ', customerPhone: phoneF ? (fieldValues[phoneF.id] || '') : '', customerEmail: emailF ? (fieldValues[emailF.id] || '') : '', fieldValues, items, shippingMethod: shippingMethod as 'pickup' | 'delivery', subtotal, shipping: shippingCost, totalAmount: total, paymentSlip: slipData })
     setDoneSlipName(slipFile?.name)
     clearCart()
     setDone(true)
-  }, [fieldValues, items, shippingMethod, subtotal, shippingCost, total, slipFile, addSubmission, clearCart])
+  }, [form, fieldValues, items, shippingMethod, subtotal, shippingCost, total, slipFile, addSubmission, clearCart])
 
   return (
     <div style={{ minHeight: '100vh', background: bg }}>

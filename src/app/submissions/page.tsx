@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useAppStore } from '@/store'
+import type { AppStore } from '@/store'
 import type { Submission, PaymentStatus } from '@/types'
 import { Btn, TabBar, Card, StatCard } from '@/components/ui'
 import { fmt, exportSubmissionsCSV, buildReceiptLines } from '@/lib/utils'
@@ -425,7 +426,7 @@ export default function SubmissionsPage() {
               </tr>
             </thead>
             <tbody>
-              {[...submissions].reverse().map(sub => (
+              {submissions.map(sub => (
                 <SubmissionRow key={sub.id} sub={sub} form={form} onConfirm={updateSubmissionPayment} />
               ))}
             </tbody>
@@ -449,7 +450,7 @@ export default function SubmissionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {[...submissions].filter(s => s.paymentStatus !== 'confirmed').reverse().map(sub => (
+                {submissions.filter(s => s.paymentStatus !== 'confirmed').map(sub => (
                   <SubmissionRow key={sub.id} sub={sub} form={form} onConfirm={updateSubmissionPayment} />
                 ))}
                 {submissions.filter(s => s.paymentStatus !== 'confirmed').length === 0 && (

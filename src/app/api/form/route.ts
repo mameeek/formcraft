@@ -11,9 +11,6 @@ export async function GET() {
     .select('data')
     .eq('id', 'main')
     .maybeSingle()
-  //debug
-console.log("SUPABASE URL:", process.env.SUPABASE_DATABASE_URL)
-  //end debug
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
@@ -25,9 +22,6 @@ console.log("SUPABASE URL:", process.env.SUPABASE_DATABASE_URL)
 
 export async function PUT(req: NextRequest) {
   const form = await req.json()
-  //debug
-  console.log("FORM RECEIVED:", JSON.stringify(form, null, 2))
-  //end debug
 
   const { error } = await supabase
     .from('form_config')
@@ -37,10 +31,9 @@ export async function PUT(req: NextRequest) {
     )
 
   if (error) {
-    console.log("UPSERT ERROR:", error)
+    console.error('form upsert error:', error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true })
 }
-

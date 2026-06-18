@@ -24,12 +24,12 @@ export default function DashboardPage() {
       if (!productMap[item.productId]) {
         productMap[item.productId] = { name: item.productName, count: 0, revenue: 0 }
       }
-      productMap[item.productId].count++
-      productMap[item.productId].revenue += item.unitPrice
+      productMap[item.productId].count += item.qty
+      productMap[item.productId].revenue += item.unitPrice * item.qty
     })
   })
   const topProducts = Object.entries(productMap).sort((a, b) => b[1].count - a[1].count).slice(0, 6)
-  const recentSubs = [...submissions].reverse().slice(0, 6)
+  const recentSubs = submissions.slice(0, 6)
 
   return (
     <div style={{ padding: '32px 36px' }} className="animate-fadeUp">
