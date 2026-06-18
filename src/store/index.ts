@@ -63,7 +63,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
         { data: formRow,   error: formErr  },
         { data: subRows,   error: subErr   },
       ] = await Promise.all([
-        supabase.from('products').select('data').order('created_at', { ascending: true }),
+        supabase.from('products').select('data'),
         supabase.from('form_config').select('data').eq('id', 'main').maybeSingle(),
         supabase.from('submissions').select('*').order('submitted_at', { ascending: false }),
       ])

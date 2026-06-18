@@ -63,12 +63,9 @@ export default function Sidebar() {
       <nav style={{ padding: '12px 10px', flex: 1 }}>
         {navItems.map((n) => {
           const isActive = pathname === n.href || pathname.startsWith(n.href + '/')
-          const Tag = n.external ? 'a' : Link
-          const extraProps = n.external ? { href: n.href, target: '_blank' } : { href: n.href }
 
           return (
-            // @ts-ignore
-            <Tag key={n.href} {...extraProps} style={{ textDecoration: 'none' }}>
+            <Link key={n.href} href={n.href} target={n.external ? '_blank' : undefined} style={{ textDecoration: 'none' }}>
               <div style={{
                 background: isActive ? 'var(--bg-hover)' : 'transparent',
                 border: `1px solid ${isActive ? 'var(--border-active)' : 'transparent'}`,
