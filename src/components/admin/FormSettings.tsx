@@ -2,14 +2,19 @@
 
 import type { FormConfig } from '@/types'
 import { Card, Label, Input } from '@/components/ui'
+import { supabase } from '@/lib/db'
+import { uid } from '@/lib/utils'
 
-function readAsDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'))
-    reader.readAsDataURL(file)
-  })
+async function uploadToStorage(file: File): Promise<string | null> {
+  const ext = file.name.split('.').pop() || 'jpg'
+  const filename = `${uid()}.${ext}`
+  const bytes = await file.arrayBuffer()
+  const { error } = await supabase.storage
+    .from('uploads')
+    .upload(filename, bytes, { contentType: file.type })
+  if (error) { console.error('Upload failed:', error); return null }
+  const { data } = supabase.storage.from('uploads').getPublicUrl(filename)
+  return data.publicUrl
 }
 
 export default function FormSettings({ form, setForm }: { form: FormConfig; setForm: (f: FormConfig) => void }) {
@@ -19,21 +24,15 @@ export default function FormSettings({ form, setForm }: { form: FormConfig; setF
 const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0]
   if (!file) return
-  const formData = new FormData()
-  formData.append('files', file)
-  const res = await fetch('/api/upload', { method: 'POST', body: formData })
-  const { urls } = await res.json()
-  if (urls?.[0]) update('bannerImage', urls[0])
+  const url = await uploadToStorage(file)
+  if (url) update('bannerImage', url)
 }
 
 const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0]
   if (!file) return
-  const formData = new FormData()
-  formData.append('files', file)
-  const res = await fetch('/api/upload', { method: 'POST', body: formData })
-  const { urls } = await res.json()
-  if (urls?.[0]) update('qrCodeImage', urls[0])
+  const url = await uploadToStorage(file)
+  if (url) update('qrCodeImage', url)
 }
 
   return (

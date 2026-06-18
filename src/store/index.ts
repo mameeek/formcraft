@@ -5,16 +5,7 @@ import { persist } from 'zustand/middleware'
 import type { Product, FormConfig, Submission, CartItem, PaymentStatus } from '@/types'
 import { defaultProducts, defaultForm } from '@/lib/defaults'
 import { uid } from '@/lib/utils'
-
-// ─── Helper ────────────────────────────────────────────────────────────────────
-async function apiFetch<T>(url: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(url, { 
-    headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-            ...opts })
-  if (!res.ok) throw new Error(`${opts?.method || 'GET'} ${url} → ${res.status}`)
-  return res.json()
-}
+import { supabase } from '@/lib/db'
 
 // ─── App Store ─────────────────────────────────────────────────────────────────
 interface AppStore {
@@ -35,6 +26,26 @@ interface AppStore {
   resetAll: () => void
 }
 
+function mapRow(row: any): Submission {
+  return {
+    id:                 row.id,
+    customerName:       row.customer_name,
+    customerPhone:      row.customer_phone,
+    customerEmail:      row.customer_email,
+    fieldValues:        row.field_values,
+    items:              row.items,
+    shippingMethod:     row.shipping_method,
+    subtotal:           row.subtotal,
+    shipping:           row.shipping,
+    totalAmount:        row.total_amount,
+    paymentSlip:        row.payment_slip,
+    paymentStatus:      row.payment_status,
+    paymentConfirmedAt: row.payment_confirmed_at,
+    paymentNote:        row.payment_note,
+    submittedAt:        row.submitted_at,
+  }
+}
+
 export const useAppStore = create<AppStore>()((set, get) => ({
   products: defaultProducts,
   form: defaultForm,
@@ -42,34 +53,54 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   loading: false,
   error: null,
   dbConnected: false,
+
   loadFromDB: async () => {
-  if (get().loading) return  // เพิ่มบรรทัดนี้
-  set({ loading: true, error: null })
-  try {
-    const [products, form, submissions] = await Promise.all([
-      apiFetch<Product[]>('/api/products').catch((e) => { console.error('❌ products:', e); return null }),
-      apiFetch<FormConfig | null>('/api/form').catch((e) => { console.error('❌ form:', e); return null }),
-      apiFetch<Submission[]>('/api/submissions').catch((e) => { console.error('❌ submissions:', e); return null }),
-    ])
-    set({
-      products: products && products.length > 0 ? products : defaultProducts,
-      form: form ?? defaultForm,
-      submissions: submissions ?? [],
-      loading: false,
-      dbConnected: true,
-    })
-  } catch (e) {
-    console.error('❌ loadFromDB failed:', e)
-    set({ loading: false, error: 'ไม่สามารถเชื่อมต่อ Database ได้', dbConnected: false })
-  }
-},
-  
+    if (get().loading) return
+    set({ loading: true, error: null })
+    try {
+      const [
+        { data: prodRows,  error: prodErr  },
+        { data: formRow,   error: formErr  },
+        { data: subRows,   error: subErr   },
+      ] = await Promise.all([
+        supabase.from('products').select('data').order('created_at', { ascending: true }),
+        supabase.from('form_config').select('data').eq('id', 'main').maybeSingle(),
+        supabase.from('submissions').select('*').order('submitted_at', { ascending: false }),
+      ])
+
+      if (prodErr)  console.error('❌ products:', prodErr)
+      if (formErr)  console.error('❌ form:', formErr)
+      if (subErr)   console.error('❌ submissions:', subErr)
+
+      const products    = prodRows  ? (prodRows  as any[]).map(r => r.data) : null
+      const form        = formRow   ? (formRow   as any).data               : null
+      const submissions = subRows   ? (subRows   as any[]).map(mapRow)      : null
+
+      set({
+        products:    products && products.length > 0 ? products : defaultProducts,
+        form:        form ?? defaultForm,
+        submissions: submissions ?? [],
+        loading:     false,
+        dbConnected: true,
+      })
+    } catch (e) {
+      console.error('❌ loadFromDB failed:', e)
+      set({ loading: false, error: 'ไม่สามารถเชื่อมต่อ Database ได้', dbConnected: false })
+    }
+  },
+
   setProducts: (products) => set({ products }),
 
   saveProducts: async (products) => {
     set({ products })
     try {
-      await apiFetch('/api/products', { method: 'PUT', body: JSON.stringify(products) })
+      await supabase.from('products').delete().neq('id', '__none__')
+      if (products.length > 0) {
+        const { error } = await supabase.from('products').insert(
+          products.map(p => ({ id: p.id, data: p })) as any
+        )
+        if (error) throw error
+      }
     } catch (e) {
       console.error('saveProducts:', e)
       set({ error: 'บันทึกสินค้าไม่สำเร็จ' })
@@ -81,7 +112,10 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   saveForm: async (form) => {
     set({ form })
     try {
-      await apiFetch('/api/form', { method: 'PUT', body: JSON.stringify(form) })
+      const { error } = await supabase
+        .from('form_config')
+        .upsert({ id: 'main', data: form, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+      if (error) throw error
     } catch (e) {
       console.error('saveForm:', e)
       set({ error: 'บันทึกฟอร์มไม่สำเร็จ' })
@@ -89,22 +123,47 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   addSubmission: async (sub) => {
-    const { id } = await apiFetch<{ id: string }>('/api/submissions', {
-      method: 'POST',
-      body: JSON.stringify(sub),
-    })
-    const newSub: Submission = { ...sub, id, submittedAt: new Date().toISOString(), paymentStatus: 'pending' }
+    const id = uid()
+    const now = new Date().toISOString()
+    const { error } = await supabase.from('submissions').insert({
+      id,
+      customer_name:   sub.customerName  || '',
+      customer_phone:  sub.customerPhone || '',
+      customer_email:  sub.customerEmail || '',
+      field_values:    sub.fieldValues   || {},
+      items:           sub.items         || [],
+      shipping_method: sub.shippingMethod || 'pickup',
+      subtotal:        sub.subtotal      || 0,
+      shipping:        sub.shipping      || 0,
+      total_amount:    sub.totalAmount   || 0,
+      payment_slip:    sub.paymentSlip   || null,
+      payment_status:  'pending',
+      submitted_at:    now,
+    } as any)
+    if (error) throw error
+    const newSub: Submission = { ...sub, id, submittedAt: now, paymentStatus: 'pending' }
     set((s) => ({ submissions: [newSub, ...s.submissions] }))
   },
 
   updateSubmissionPayment: async (id, status, note) => {
+    const now = new Date().toISOString()
     set((s) => ({
       submissions: s.submissions.map((sub) =>
-        sub.id === id ? { ...sub, paymentStatus: status, paymentConfirmedAt: new Date().toISOString(), paymentNote: note ?? sub.paymentNote } : sub
+        sub.id === id
+          ? { ...sub, paymentStatus: status, paymentConfirmedAt: now, paymentNote: note ?? sub.paymentNote }
+          : sub
       ),
     }))
     try {
-      await apiFetch(`/api/submissions/${id}`, { method: 'PATCH', body: JSON.stringify({ status, note }) })
+      const { error } = await supabase
+        .from('submissions')
+        .update({
+          payment_status:       status,
+          payment_confirmed_at: now,
+          payment_note:         note || null,
+        } as any)
+        .eq('id', id)
+      if (error) throw error
     } catch (e) {
       console.error('updateSubmissionPayment:', e)
     }
@@ -126,12 +185,12 @@ export const useCartStore = create<CartStore>()(
   persist(
     (set) => ({
       items: [],
-      addItem: (item) => set((s) => ({ items: [...s.items, { ...item, cartId: uid() }] })),
-      updateQty: (cartId, delta) => set((s) => ({
+      addItem:    (item)         => set((s) => ({ items: [...s.items, { ...item, cartId: uid() }] })),
+      updateQty:  (cartId, delta) => set((s) => ({
         items: s.items.map((i) => i.cartId === cartId ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter((i) => i.qty > 0),
       })),
-      removeItem: (cartId) => set((s) => ({ items: s.items.filter((i) => i.cartId !== cartId) })),
-      clearCart: () => set({ items: [] }),
+      removeItem: (cartId)       => set((s) => ({ items: s.items.filter((i) => i.cartId !== cartId) })),
+      clearCart:  ()             => set({ items: [] }),
     }),
     { name: 'formcraft-cart' }
   )
