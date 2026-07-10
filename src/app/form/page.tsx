@@ -278,7 +278,10 @@ function ConfigureModal({ prod, allProducts, accent, cardBg, cardBorder, text, s
       })
     }
 
-    addItem({ productId: prod.id, productName: prod.name, productCode: prod.code, productImages: prod.images, unitPrice: prod.price, qty, variantSelections: { ...selections }, variantCodes: { ...selCodes }, isSet: prod.type === 'set', setDetails })
+    // Only the cover image is ever displayed for a cart line (item.productImages?.[0]),
+    // but this whole array gets snapshotted into the order record — storing all of a
+    // product's photos here multiplied straight into submissions.items bloat.
+    addItem({ productId: prod.id, productName: prod.name, productCode: prod.code, productImages: prod.images.slice(0, 1), unitPrice: prod.price, qty, variantSelections: { ...selections }, variantCodes: { ...selCodes }, isSet: prod.type === 'set', setDetails })
 
     // Reset for both set and single
     setSelections(prefillVariant ? { [prefillVariant.variantId]: prefillVariant.optionLabel } : {})
@@ -788,6 +791,11 @@ export default function FormPage() {
   const { accent, bg, text, subtext, cardBg, cardBorder } = useTheme()
 
   const [step, setStep] = useState<Step>('info')
+  // Once a step has been visited it stays mounted (just hidden via CSS)
+  // instead of being torn down — otherwise every trip back to "products"
+  // forced every product image to be re-decoded and repainted from scratch.
+  const [visitedSteps, setVisitedSteps] = useState<Set<Step>>(() => new Set<Step>(['info']))
+  useEffect(() => { setVisitedSteps(v => v.has(step) ? v : new Set(v).add(step)) }, [step])
 
   const [infoValid, setInfoValid] = useState(false)
 
@@ -883,28 +891,41 @@ export default function FormPage() {
         </div>
       </div>
 
-      {/* Content */}
-      <div key={done ? 'done' : step} className="animate-fadeUp" style={{ maxWidth: 640, margin: '0 auto', padding: '24px 18px 100px' }}>
-        {done ? (
-          <DoneScreen shippingMethod={shippingMethod} slipName={doneSlipName} text={text} subtext={subtext} cardBorder={cardBorder} />
-        ) : step === 'info' ? (
+      {/* Content — each step stays mounted once visited (display:none when
+          inactive) so its images decode once instead of on every revisit. */}
+      <div style={{ maxWidth: 640, margin: '0 auto', padding: '24px 18px 100px' }}>
+        {done && (
+          <div className="animate-fadeUp">
+            <DoneScreen shippingMethod={shippingMethod} slipName={doneSlipName} text={text} subtext={subtext} cardBorder={cardBorder} />
+          </div>
+        )}
+        <div style={{ display: !done && step === 'info' ? 'block' : 'none' }}>
           <InfoStep form={form} fieldValues={fieldValues} setFieldValues={setFieldValues}
             shippingMethod={shippingMethod} setShippingMethod={setShippingMethod}
             errors={errors} onNext={() => { if (validate()) { setInfoValid(true); setStep('products') } }}
             accent={accent} text={text} subtext={subtext} cardBg={cardBg} cardBorder={cardBorder} />
-        ) : step === 'products' ? (
-          <ProductsStep products={products} cartItems={items} accent={accent} cardBg={cardBg} cardBorder={cardBorder} text={text} subtext={subtext}
-            onOpen={(prod, virtual) => setModalProd({ prod, virtual })}
-            onNext={() => setStep('cart')} onBack={() => setStep('info')} />
-        ) : step === 'cart' ? (
-          <CartStep items={items} updateQty={updateQty} removeItem={removeItem}
-            subtotal={subtotal} shippingCost={shippingCost} shippingMethod={shippingMethod}
-            accent={accent} text={text} subtext={subtext} cardBg={cardBg} cardBorder={cardBorder}
-            onNext={() => setStep('payment')} onBack={() => setStep('products')} onAddMore={() => setStep('products')} />
-        ) : (
-          <PaymentStep form={form} total={total} slipFile={slipFile} setSlipFile={setSlipFile}
-            accent={accent} text={text} subtext={subtext} cardBg={cardBg} cardBorder={cardBorder}
-            onSubmit={handleSubmit} onBack={() => setStep('cart')} submitting={submitting} />
+        </div>
+        {visitedSteps.has('products') && (
+          <div style={{ display: !done && step === 'products' ? 'block' : 'none' }}>
+            <ProductsStep products={products} cartItems={items} accent={accent} cardBg={cardBg} cardBorder={cardBorder} text={text} subtext={subtext}
+              onOpen={(prod, virtual) => setModalProd({ prod, virtual })}
+              onNext={() => setStep('cart')} onBack={() => setStep('info')} />
+          </div>
+        )}
+        {visitedSteps.has('cart') && (
+          <div style={{ display: !done && step === 'cart' ? 'block' : 'none' }}>
+            <CartStep items={items} updateQty={updateQty} removeItem={removeItem}
+              subtotal={subtotal} shippingCost={shippingCost} shippingMethod={shippingMethod}
+              accent={accent} text={text} subtext={subtext} cardBg={cardBg} cardBorder={cardBorder}
+              onNext={() => setStep('payment')} onBack={() => setStep('products')} onAddMore={() => setStep('products')} />
+          </div>
+        )}
+        {visitedSteps.has('payment') && (
+          <div style={{ display: !done && step === 'payment' ? 'block' : 'none' }}>
+            <PaymentStep form={form} total={total} slipFile={slipFile} setSlipFile={setSlipFile}
+              accent={accent} text={text} subtext={subtext} cardBg={cardBg} cardBorder={cardBorder}
+              onSubmit={handleSubmit} onBack={() => setStep('cart')} submitting={submitting} />
+          </div>
         )}
       </div>
 

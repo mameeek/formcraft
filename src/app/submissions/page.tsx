@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useAppStore } from '@/store'
 import type { AppStore } from '@/store'
 import type { Submission, PaymentStatus } from '@/types'
@@ -35,6 +35,13 @@ function SubmissionRow({ sub, onConfirm, form }: {
   const [expanded, setExpanded] = useState(false)
   const [note, setNote] = useState(sub.paymentNote || '')
   const [slipLightbox, setSlipLightbox] = useState(false)
+  const loadSubmissionSlip = useAppStore((s) => s.loadSubmissionSlip)
+
+  // The slip image is the expensive part of a submission row — it's only
+  // fetched once this row is actually opened, not for the whole list up front.
+  useEffect(() => {
+    if (expanded && sub.paymentSlip === undefined) loadSubmissionSlip(sub.id)
+  }, [expanded, sub.id, sub.paymentSlip, loadSubmissionSlip])
 
   return (
     <>
@@ -95,18 +102,23 @@ function SubmissionRow({ sub, onConfirm, form }: {
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 10 }}>การชำระเงิน</div>
                   <div style={{ background: 'var(--bg-deep)', borderRadius: 10, padding: 14 }}>
-                    {sub.paymentSlip ? (
+                    {sub.paymentSlip === undefined ? (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 12, height: 12, border: '2px solid var(--border)', borderTop: '2px solid var(--purple)', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                        กำลังโหลดสลิป...
+                      </div>
+                    ) : sub.paymentSlip ? (
                       <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>สลิปโอนเงิน</div>
                         <div>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={sub.paymentSlip!} alt="slip"
+                          <img src={sub.paymentSlip} alt="slip"
                             onClick={() => setSlipLightbox(true)}
                             style={{ maxWidth: '100%', maxHeight: 130, borderRadius: 8, border: '1px solid var(--border)', display: 'block', cursor: 'zoom-in' }}
                             onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                           />
                           <button onClick={() => setSlipLightbox(true)} style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--blue)', fontSize: 11, cursor: 'pointer', padding: 0 }}>🔍 ดูรูปเต็ม</button>
-                          {slipLightbox && <SlipLightbox src={sub.paymentSlip!} onClose={() => setSlipLightbox(false)} />}
+                          {slipLightbox && <SlipLightbox src={sub.paymentSlip} onClose={() => setSlipLightbox(false)} />}
                         </div>
                       </div>
                     ) : (

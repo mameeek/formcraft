@@ -113,7 +113,8 @@ export interface Submission {
   subtotal: number
   shipping: number
   totalAmount: number
-  paymentSlip: string | null
+  /** undefined = not fetched yet (admin list loads without it), null = no slip, string = URL */
+  paymentSlip?: string | null
   paymentStatus: PaymentStatus
   paymentConfirmedAt?: string
   paymentNote?: string

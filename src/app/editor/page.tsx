@@ -75,7 +75,7 @@ function EditorContent() {
   }
 
   return (
-    <div style={{ padding: '32px 36px 90px' }} className="animate-fadeUp">
+    <div style={{ padding: '32px 36px' }} className="animate-fadeUp">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 28 }}>
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 800, color: '#fff', marginBottom: 4 }}>แก้ไขฟอร์ม</h1>
@@ -92,9 +92,9 @@ function EditorContent() {
 
       {(dirty || saveState !== 'idle') && (
         <div className="animate-fadeUp" style={{
-          position: 'fixed', right: 28, bottom: 28, zIndex: 200,
+          position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', zIndex: 200,
           background: 'var(--bg-panel)', border: `1px solid ${saveState === 'error' ? 'rgba(248,113,113,0.4)' : 'var(--border)'}`,
-          borderRadius: 14, padding: '14px 16px', boxShadow: '0 12px 32px rgba(0,0,0,0.35)',
+          borderRadius: 14, padding: '14px 16px', boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
           display: 'flex', alignItems: 'center', gap: 12, minWidth: 280,
         }}>
           {saveState === 'saved' ? (

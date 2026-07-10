@@ -30,8 +30,14 @@ interface AppStore {
   saveForm: (f: FormConfig) => Promise<boolean>
   addSubmission: (s: Omit<Submission, 'id' | 'submittedAt' | 'paymentStatus'>) => Promise<void>
   updateSubmissionPayment: (id: string, status: PaymentStatus, note?: string) => Promise<void>
+  /** Fetches payment_slip for one submission on demand — the admin list loads without it. */
+  loadSubmissionSlip: (id: string) => Promise<void>
   resetAll: () => void
 }
+
+// Columns for the admin list — payment_slip is deliberately excluded, it's
+// fetched per-row only once its detail view is opened (loadSubmissionSlip).
+const SUBMISSION_LIST_COLUMNS = 'id, customer_name, customer_phone, customer_email, field_values, items, shipping_method, subtotal, shipping, total_amount, payment_status, payment_confirmed_at, payment_note, submitted_at'
 
 function mapRow(row: any): Submission {
   return {
@@ -45,7 +51,7 @@ function mapRow(row: any): Submission {
     subtotal:           row.subtotal,
     shipping:           row.shipping,
     totalAmount:        row.total_amount,
-    paymentSlip:        row.payment_slip,
+    paymentSlip:        row.payment_slip, // undefined when not selected — see SUBMISSION_LIST_COLUMNS
     paymentStatus:      row.payment_status,
     paymentConfirmedAt: row.payment_confirmed_at,
     paymentNote:        row.payment_note,
@@ -103,7 +109,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       ] = await Promise.all([
         supabase.from('products').select('data'),
         supabase.from('form_config').select('data').eq('id', 'main').maybeSingle(),
-        supabase.from('submissions').select('*').order('submitted_at', { ascending: false }),
+        supabase.from('submissions').select(SUBMISSION_LIST_COLUMNS).order('submitted_at', { ascending: false }),
       ])
 
       if (prodErr) console.error('❌ products:', prodErr)
@@ -209,6 +215,25 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       if (error) throw error
     } catch (e) {
       console.error('updateSubmissionPayment:', e)
+    }
+  },
+
+  loadSubmissionSlip: async (id) => {
+    const existing = get().submissions.find((s) => s.id === id)
+    if (!existing || existing.paymentSlip !== undefined) return // already loaded (or already null)
+    try {
+      const { data, error } = await supabase
+        .from('submissions')
+        .select('payment_slip')
+        .eq('id', id)
+        .maybeSingle()
+      if (error) throw error
+      const slip = (data as any)?.payment_slip ?? null
+      set((s) => ({
+        submissions: s.submissions.map((sub) => sub.id === id ? { ...sub, paymentSlip: slip } : sub),
+      }))
+    } catch (e) {
+      console.error('loadSubmissionSlip:', e)
     }
   },
 
