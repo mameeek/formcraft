@@ -3,8 +3,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useAppStore, useCartStore } from '@/store'
-import type { CartItem, FormField, Product, ProductVariant, FieldCondition } from '@/types'
-import { getProductVariants, getEffectiveUnitPrice, fmt, buildReceiptLines } from '@/lib/utils'
+import type { CartItem, FormField, Product, ProductVariant, FieldCondition, ConditionRule } from '@/types'
+import { getProductVariants, getEffectiveUnitPrice, fmt, buildReceiptLines, normalizeCondition } from '@/lib/utils'
 import { uploadToStorage } from '@/lib/storage'
 import { supabase } from '@/lib/db'
 
@@ -21,13 +21,20 @@ function useTheme() {
 }
 
 // ─── Condition evaluator ───────────────────────────────────────────────────────
-function evalCond(cond: FieldCondition | null | undefined, vals: Record<string, string>, ship: string): boolean {
-  if (!cond) return true
-  const actual = cond.fieldId === '__shipping__' ? ship : (vals[cond.fieldId] || '')
-  if (cond.operator === 'equals')     return actual === cond.value
-  if (cond.operator === 'not_equals') return actual !== cond.value
-  if (cond.operator === 'contains')   return actual.includes(cond.value)
+function evalRule(rule: ConditionRule, vals: Record<string, string>, ship: string): boolean {
+  const actual = rule.fieldId === '__shipping__' ? ship : (vals[rule.fieldId] || '')
+  if (rule.operator === 'equals')     return actual === rule.value
+  if (rule.operator === 'not_equals') return actual !== rule.value
+  if (rule.operator === 'contains')   return actual.includes(rule.value)
   return true
+}
+
+function evalCond(cond: FieldCondition | null | undefined, vals: Record<string, string>, ship: string): boolean {
+  const group = normalizeCondition(cond)
+  if (!group || group.rules.length === 0) return true
+  return group.logic === 'OR'
+    ? group.rules.some(r => evalRule(r, vals, ship))
+    : group.rules.every(r => evalRule(r, vals, ship))
 }
 
 // ─── Step tabs ─────────────────────────────────────────────────────────────────
@@ -486,6 +493,26 @@ function InfoStep({ form, fieldValues, setFieldValues, shippingMethod, setShippi
                         })}
                       </div>
                     )}
+                    {f.type === 'shipping' && (
+                      <div>
+                        {[
+                          { label: f.options?.[0] || 'รับที่สถานที่', note: 'ฟรี' },
+                          { label: f.options?.[1] || 'จัดส่งทางไปรษณีย์', note: `+฿${fmt(f.shippingCost || 0)}` },
+                        ].map((opt, i) => {
+                          const sel = fieldValues[f.id] === opt.label
+                          return (
+                            <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 15px', background: sel ? accent + '10' : '#fff', border: `1.5px solid ${sel ? accent : cardBorder}`, borderRadius: 12, marginBottom: 9, cursor: 'pointer', transition: 'all 0.15s' }}>
+                              <input type="radio" name={f.id} checked={sel} onChange={() => setFieldValues({ ...fieldValues, [f.id]: opt.label })} style={{ accentColor: accent }} />
+                              <span style={{ fontSize: 24 }}>{i === 0 ? '🏫' : '📮'}</span>
+                              <div>
+                                <div style={{ fontSize: 14, color: text, fontWeight: 600 }}>{opt.label}</div>
+                                <div style={{ fontSize: 12, color: subtext }}>{opt.note}</div>
+                              </div>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
                     {errors[f.id] && <div style={{ fontSize: 12, color: '#e94560', marginTop: 5 }}>⚠ {errors[f.id]}</div>}
                   </div>
                 )
@@ -496,10 +523,9 @@ function InfoStep({ form, fieldValues, setFieldValues, shippingMethod, setShippi
       })}
 
       {/* Legacy global shipping toggle — only used as a fallback for forms
-          that don't have a field flagged isShippingVariable yet (that field
-          renders inline with its topic above, via its normal choice/dropdown
-          case — no special-casing needed here). */}
-      {form.shipping?.enabled && !form.sections.some(s => s.fields.some(f => f.isShippingVariable)) && (
+          that don't have a 🚚 วิธีจัดส่ง field yet (it renders inline with
+          its topic above, via the f.type === 'shipping' case). */}
+      {form.shipping?.enabled && !form.sections.some(s => s.fields.some(f => f.type === 'shipping')) && (
         <div style={{ marginBottom: 26 }}>
           <h3 style={{ fontSize: 17, fontWeight: 700, color: text, marginBottom: 12 }}>วิธีรับสินค้า</h3>
           {[{ val: 'pickup', icon: '🏫', label: 'รับที่สถานที่', note: 'ฟรี' },
@@ -859,22 +885,19 @@ function FormPageContent() {
   const [modalProd, setModalProd]           = useState<{ prod: Product; virtual?: VirtualProduct } | null>(null)
   const [submitting, setSubmitting]         = useState(false)
 
-  // If any field is flagged isShippingVariable (a normal choice/dropdown
-  // field), it's the source of truth — driven by fieldValues like any other
-  // field, no special rendering needed. Otherwise fall back to the legacy
-  // global toggle/state for forms that predate this.
+  // If a 🚚 วิธีจัดส่ง field exists anywhere in the form, it's the source of
+  // truth (driven by fieldValues, like any other field) — otherwise fall
+  // back to the legacy global toggle/state for forms that predate it.
   const shippingField = useMemo(
-    () => form.sections.flatMap(s => s.fields).find(f => f.isShippingVariable),
+    () => form.sections.flatMap(s => s.fields).find(f => f.type === 'shipping'),
     [form.sections]
   )
   const shippingMethod: string = shippingField
-    ? (fieldValues[shippingField.id] === shippingField.deliveryOption ? 'delivery' : 'pickup')
+    ? (fieldValues[shippingField.id] === shippingField.options?.[1] ? 'delivery' : 'pickup')
     : legacyShippingMethod
   const setShippingMethod = (v: string) => {
     if (shippingField) {
-      const label = v === 'delivery'
-        ? (shippingField.deliveryOption || '')
-        : (shippingField.options?.find(o => o !== shippingField.deliveryOption) || '')
+      const label = v === 'delivery' ? (shippingField.options?.[1] || '') : (shippingField.options?.[0] || '')
       setFieldValues({ ...fieldValues, [shippingField.id]: label })
     } else {
       setLegacyShippingMethod(v)

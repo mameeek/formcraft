@@ -37,13 +37,22 @@ export interface Product {
 }
 
 // ─── Form Types ────────────────────────────────────────────────────────────────
-export type FieldType = 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'dropdown' | 'choice' | 'checkbox' | 'file'
+export type FieldType = 'text' | 'email' | 'tel' | 'textarea' | 'select' | 'dropdown' | 'choice' | 'checkbox' | 'file' | 'shipping'
 export type FieldWidth = 'full' | 'half'
 
-export interface FieldCondition {
+export interface ConditionRule {
   fieldId: string
   operator: 'equals' | 'not_equals' | 'contains'
   value: string
+}
+
+/** An AND/OR group of rules — shown/hidden when the whole group evaluates
+ *  true. Forms saved before this existed have a flat { fieldId, operator,
+ *  value } instead of { logic, rules } — normalizeCondition() (lib/utils.ts)
+ *  reads either shape as a 1-rule AND group; nothing needs migrating. */
+export interface FieldCondition {
+  logic: 'AND' | 'OR'
+  rules: ConditionRule[]
 }
 
 export interface FormField {
@@ -57,13 +66,7 @@ export interface FormField {
   condition?: FieldCondition | null
   validationRegex?: string        // custom regex pattern
   validationMessage?: string      // error message when regex fails
-  /** Flags a choice/dropdown field as controlling the shipping variable — its
-   *  selected option drives shippingMethod (pickup/delivery) and shippingCost
-   *  elsewhere in the form, same as any other field but usable for pricing/logic. */
-  isShippingVariable?: boolean
-  /** Which of this field's options counts as "delivery" (adds shippingCost). */
-  deliveryOption?: string
-  /** Cost added when deliveryOption is selected. */
+  /** type==='shipping' only: cost added when the 2nd option (delivery) is selected. options[0]=pickup, options[1]=delivery. */
   shippingCost?: number
 }
 

@@ -406,17 +406,23 @@ interface AuthStore {
   signOut: () => Promise<void>
 }
 
-export const useAuthStore = create<AuthStore>()((set, get) => ({
+let authInitStarted = false
+
+export const useAuthStore = create<AuthStore>()((set) => ({
   session: null,
   initialized: false,
   error: null,
   signingIn: false,
 
+  // `initialized` only flips once the session lookup has actually resolved —
+  // flipping it synchronously (before getSession() resolves) meant every page
+  // that gates on (initialized, !session) briefly saw "logged out" on a hard
+  // reload, even for an already-authenticated user, and bounced through /login.
   init: () => {
-    if (get().initialized) return
-    set({ initialized: true })
-    supabase.auth.getSession().then(({ data }) => set({ session: data.session }))
-    supabase.auth.onAuthStateChange((_event, session) => set({ session }))
+    if (authInitStarted) return
+    authInitStarted = true
+    supabase.auth.getSession().then(({ data }) => set({ session: data.session, initialized: true }))
+    supabase.auth.onAuthStateChange((_event, session) => set({ session, initialized: true }))
   },
 
   signInWithPassword: async (email, password) => {

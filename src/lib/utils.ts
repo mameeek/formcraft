@@ -1,7 +1,22 @@
-import type { Product, ProductVariant, CartItem, Submission } from '@/types'
+import type { Product, ProductVariant, CartItem, Submission, FieldCondition, ConditionRule } from '@/types'
 
 export function uid(): string {
   return Math.random().toString(36).slice(2, 9)
+}
+
+/** Reads a saved `condition` value as a { logic, rules } group whether it's
+ *  the current shape or the legacy flat { fieldId, operator, value } shape
+ *  saved by older versions of the editor — old data keeps working as a
+ *  1-rule AND group with no migration needed. */
+export function normalizeCondition(cond: unknown): FieldCondition | null {
+  if (!cond || typeof cond !== 'object') return null
+  const c = cond as Record<string, unknown>
+  if (Array.isArray(c.rules)) return c as unknown as FieldCondition
+  if (typeof c.fieldId === 'string') {
+    const rule: ConditionRule = { fieldId: c.fieldId, operator: c.operator as ConditionRule['operator'], value: String(c.value ?? '') }
+    return { logic: 'AND', rules: [rule] }
+  }
+  return null
 }
 
 /** Turn a title into a URL-friendly slug (lowercase, ascii/digits/dash only — falls

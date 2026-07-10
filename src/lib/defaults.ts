@@ -123,7 +123,7 @@ export const defaultForm: FormConfig = {
         {
           id: 'f5', type: 'textarea', label: 'ที่อยู่', placeholder: 'บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์',
           required: false, width: 'full',
-          condition: { fieldId: '__shipping__', operator: 'equals', value: 'delivery' },
+          condition: { logic: 'AND', rules: [{ fieldId: '__shipping__', operator: 'equals', value: 'delivery' }] },
         },
       ],
     },
@@ -132,6 +132,7 @@ export const defaultForm: FormConfig = {
 
 /** A fresh, empty form (no demo products) for when an admin creates a new form. */
 export function blankFormConfig(title: string): FormConfig {
+  const shippingFieldId = uid()
   return {
     id: uid(),
     title,
@@ -158,10 +159,19 @@ export function blankFormConfig(title: string): FormConfig {
         ],
       },
       {
+        // Shipping is its own topic (a dedicated 'shipping' field), not
+        // nested under customer info — keeps it visually distinct and easy
+        // to reposition on its own via the topic ▲▼ arrows.
+        id: uid(), title: 'วิธีรับสินค้า',
+        fields: [
+          { id: shippingFieldId, type: 'shipping', label: 'วิธีรับสินค้า', placeholder: '', required: true, width: 'full', options: ['รับที่สถานที่', 'จัดส่งทางไปรษณีย์'], shippingCost: 0 },
+        ],
+      },
+      {
         // Condition lives on the section, not each field, so the whole
         // address block shows/hides together when shipping is toggled.
         id: uid(), title: 'ที่อยู่จัดส่ง',
-        condition: { fieldId: '__shipping__', operator: 'equals', value: 'delivery' },
+        condition: { logic: 'AND', rules: [{ fieldId: shippingFieldId, operator: 'equals', value: 'จัดส่งทางไปรษณีย์' }] },
         fields: [
           { id: uid(), type: 'text', label: 'ที่อยู่',         placeholder: 'บ้านเลขที่ ถนน',   required: false, width: 'full' },
           { id: uid(), type: 'text', label: 'ตำบล',           placeholder: 'ตำบล',            required: false, width: 'half' },

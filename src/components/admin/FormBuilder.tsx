@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import type { FormConfig, FormField, FormSection, FieldType, FieldCondition } from '@/types'
+import type { FormConfig, FormField, FormSection, FieldType, FieldCondition, ConditionRule } from '@/types'
 import { Btn, Card, Label, Input, Select, IconBtn } from '@/components/ui'
-import { uid } from '@/lib/utils'
+import { uid, normalizeCondition } from '@/lib/utils'
 
 const FIELD_TYPES: { value: FieldType; label: string; icon: string }[] = [
   { value: 'text',     label: 'ข้อความ',           icon: '✏️' },
@@ -14,30 +14,143 @@ const FIELD_TYPES: { value: FieldType; label: string; icon: string }[] = [
   { value: 'choice',   label: 'Choice (ปุ่ม)',      icon: '🔘' },
   { value: 'checkbox', label: 'Checkbox',            icon: '☑️' },
   { value: 'file',     label: 'ไฟล์',               icon: '📎' },
+  { value: 'shipping', label: 'วิธีจัดส่ง',         icon: '🚚' },
 ]
+
+// Placeholder + regex only make sense for free-text inputs.
+const TEXT_LIKE_TYPES: FieldType[] = ['text', 'email', 'tel', 'textarea']
 
 const PRESET_REGEX: Record<string, { pattern: string; msg: string }> = {
   email: { pattern: '^[^@]+@[^@]+\\.[^@]+$', msg: 'รูปแบบอีเมลไม่ถูกต้อง' },
   tel:   { pattern: '^[0-9\\-\\+\\s]{8,15}$',  msg: 'รูปแบบเบอร์โทรไม่ถูกต้อง' },
 }
 
+// A fresh value matching whatever `fieldId` now points to — switching the
+// condition's target field must not leave a stale value from the old one
+// (e.g. a Thai option label left behind after switching to __shipping__,
+// which expects the literal "delivery"/"pickup").
+function defaultConditionValue(fieldId: string, allFields: FormField[]): string {
+  if (fieldId === '__shipping__') return 'delivery'
+  const target = allFields.find(f => f.id === fieldId)
+  // Shipping fields are almost always used to gate something on "delivery"
+  // (the 2nd option) — default there instead of the less useful 1st option.
+  if (target?.type === 'shipping') return target.options?.[1] || target.options?.[0] || ''
+  return target?.options?.[0] || ''
+}
+
+// The rule's "value" must match the target field exactly — free text lets
+// you type a value the field can never actually produce (wrong language,
+// typo, stale option) with no indication anything's wrong. Render a dropdown
+// of the field's real options whenever we can.
+function ConditionValueField({ rule, allFields, onChange, style }: {
+  rule: { fieldId: string; value: string }
+  allFields: FormField[]
+  onChange: (value: string) => void
+  style?: React.CSSProperties
+}) {
+  if (rule.fieldId === '__shipping__') {
+    return (
+      <Select value={rule.value} onChange={e => onChange(e.target.value)} style={style}>
+        <option value="pickup">รับที่สถานที่ (pickup)</option>
+        <option value="delivery">จัดส่งทางไปรษณีย์ (delivery)</option>
+      </Select>
+    )
+  }
+  const targetOptions = allFields.find(f => f.id === rule.fieldId)?.options
+  if (targetOptions?.length) {
+    return (
+      <Select value={rule.value} onChange={e => onChange(e.target.value)} style={style}>
+        {targetOptions.map(o => <option key={o} value={o}>{o}</option>)}
+      </Select>
+    )
+  }
+  return <Input value={rule.value} onChange={e => onChange(e.target.value)} placeholder="ค่าที่ต้องตรงกัน" style={style} />
+}
+
+// A condition is a group of one or more rules combined with a single AND/OR
+// (applies uniformly — no mixed/nested logic, which covers the common case
+// without the UI complexity of arbitrary boolean trees).
+function ConditionEditor({ label, condition, allFields, onChange }: {
+  label: string
+  condition: FieldCondition
+  allFields: FormField[]
+  onChange: (cond: FieldCondition) => void
+}) {
+  const updateRule = (idx: number, patch: Partial<ConditionRule>) =>
+    onChange({ ...condition, rules: condition.rules.map((r, i) => i === idx ? { ...r, ...patch } : r) })
+
+  const addRule = () => {
+    const fieldId = allFields[0]?.id || '__shipping__'
+    onChange({ ...condition, rules: [...condition.rules, { fieldId, operator: 'equals', value: defaultConditionValue(fieldId, allFields) }] })
+  }
+
+  const removeRule = (idx: number) => {
+    const rules = condition.rules.filter((_, i) => i !== idx)
+    onChange({ ...condition, rules: rules.length ? rules : condition.rules })
+  }
+
+  return (
+    <div style={{ background: 'var(--bg-deep)', borderRadius: 8, padding: 10 }}>
+      {condition.rules.map((rule, idx) => (
+        <div key={idx} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: idx < condition.rules.length - 1 ? 8 : 0 }}>
+          {idx === 0 ? (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0, width: 64 }}>{label}</span>
+          ) : (
+            <Select value={condition.logic} onChange={e => onChange({ ...condition, logic: e.target.value as 'AND' | 'OR' })}
+              style={{ width: 64, fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+              <option value="AND">และ</option>
+              <option value="OR">หรือ</option>
+            </Select>
+          )}
+          <Select value={rule.fieldId}
+            onChange={e => {
+              const fieldId = e.target.value
+              updateRule(idx, { fieldId, value: defaultConditionValue(fieldId, allFields) })
+            }}
+            style={{ flex: 1, minWidth: 110, fontSize: 12 }}>
+            <option value="__shipping__">การจัดส่ง</option>
+            {allFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </Select>
+          <Select value={rule.operator} onChange={e => updateRule(idx, { operator: e.target.value as ConditionRule['operator'] })}
+            style={{ width: 110, fontSize: 12 }}>
+            <option value="equals">= เท่ากับ</option>
+            <option value="not_equals">≠ ไม่เท่ากับ</option>
+            <option value="contains">∋ มีคำว่า</option>
+          </Select>
+          <ConditionValueField rule={rule} allFields={allFields} onChange={v => updateRule(idx, { value: v })}
+            style={{ flex: 1, minWidth: 70, fontSize: 12 }} />
+          {condition.rules.length > 1 && (
+            <button onClick={() => removeRule(idx)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>✕</button>
+          )}
+        </div>
+      ))}
+      <button onClick={addRule}
+        style={{ marginTop: 8, fontSize: 11, background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}>
+        + เพิ่มเงื่อนไข
+      </button>
+    </div>
+  )
+}
+
 // ── Field card (collapsed/expanded) ─────────────────────────────────────────
-function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, onMoveDown, canMoveUp, canMoveDown }: {
+function FieldCard({ field, allFields, sectionId, sections, onUpdate, onRemove, onMoveUp, onMoveDown, onMoveToSection, canMoveUp, canMoveDown }: {
   field: FormField
   allFields: FormField[]
   sectionId: string
+  sections: { id: string; title: string }[]
   onUpdate: (key: keyof FormField, val: unknown) => void
   onRemove: () => void
   onMoveUp: () => void
   onMoveDown: () => void
+  onMoveToSection: (toSectionId: string) => void
   canMoveUp: boolean
   canMoveDown: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const hasOptions = ['dropdown', 'choice', 'checkbox', 'select'].includes(field.type)
-  // Only single-select option fields make sense as a shipping variable (a
-  // binary pickup/delivery choice) — checkbox allows multiple at once.
-  const canBeShippingVariable = field.type === 'dropdown' || field.type === 'choice'
+  const isShipping = field.type === 'shipping'
+  const isTextLike = TEXT_LIKE_TYPES.includes(field.type)
 
   return (
     <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
@@ -100,13 +213,15 @@ function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, 
                   onUpdate('validationMessage', preset.msg)
                 }
               }}>
-                {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
+                {FIELD_TYPES.filter(t => t.value !== 'shipping' || isShipping || !allFields.some(f => f.type === 'shipping')).map(t => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
               </Select>
             </div>
-            <div style={{ flex: 2 }}>
-              <Label>Placeholder</Label>
-              <Input value={field.placeholder || ''} onChange={e => onUpdate('placeholder', e.target.value)} placeholder="ข้อความ placeholder" />
-            </div>
+            {isTextLike && (
+              <div style={{ flex: 2 }}>
+                <Label>Placeholder</Label>
+                <Input value={field.placeholder || ''} onChange={e => onUpdate('placeholder', e.target.value)} placeholder="ข้อความ placeholder" />
+              </div>
+            )}
           </div>
 
           {/* Options */}
@@ -123,39 +238,24 @@ function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, 
             </div>
           )}
 
-          {/* Shipping variable — any choice/dropdown field can be flagged as
-              "this controls shipping": pick which option means delivery and
-              what it costs. The field itself still renders normally above;
-              this only adds pricing/logic meaning to its existing options. */}
-          {canBeShippingVariable && (field.options?.length ?? 0) >= 2 && (
-            <div style={{ marginBottom: 10, background: 'var(--bg-deep)', borderRadius: 8, padding: 10 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', marginBottom: field.isShippingVariable ? 10 : 0 }}>
-                <input type="checkbox" checked={!!field.isShippingVariable}
-                  onChange={e => {
-                    onUpdate('isShippingVariable', e.target.checked)
-                    if (e.target.checked && !field.deliveryOption) onUpdate('deliveryOption', field.options?.[field.options.length - 1] || '')
-                  }} />
-                🚚 ใช้ฟิลด์นี้เป็นตัวแปรวิธีจัดส่ง (Shipping Variable)
-              </label>
-              {field.isShippingVariable && (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: 140 }}>
-                    <Label>ตัวเลือกที่หมายถึง &quot;จัดส่ง&quot; (มีค่าใช้จ่าย)</Label>
-                    <Select value={field.deliveryOption || ''} onChange={e => onUpdate('deliveryOption', e.target.value)}>
-                      {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>ค่าจัดส่ง (฿)</Label>
-                    <Input type="number" value={String(field.shippingCost ?? 0)}
-                      onChange={e => onUpdate('shippingCost', Number(e.target.value))} style={{ width: 120 }} />
-                  </div>
-                </div>
-              )}
+          {/* Shipping method: pickup/delivery labels + delivery cost, instead of the generic options/regex editors */}
+          {isShipping && (
+            <div style={{ marginBottom: 10 }}>
+              <Label>ตัวเลือกรับสินค้า</Label>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                <Input value={field.options?.[0] || ''} placeholder="รับที่สถานที่ (ฟรี)"
+                  onChange={e => onUpdate('options', [e.target.value, field.options?.[1] || ''])} />
+                <Input value={field.options?.[1] || ''} placeholder="จัดส่งทางไปรษณีย์"
+                  onChange={e => onUpdate('options', [field.options?.[0] || '', e.target.value])} />
+              </div>
+              <Label>ค่าจัดส่ง (฿) <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(เพิ่มเมื่อเลือกตัวเลือกที่ 2)</span></Label>
+              <Input type="number" value={String(field.shippingCost ?? 0)}
+                onChange={e => onUpdate('shippingCost', Number(e.target.value))} style={{ width: 140 }} />
             </div>
           )}
 
           {/* Regex validation */}
+          {isTextLike && (
           <div style={{ marginBottom: 10 }}>
             <Label>Regex Validation <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(ไม่บังคับ)</span></Label>
             <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
@@ -177,39 +277,37 @@ function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, 
             <Input value={field.validationMessage || ''} onChange={e => onUpdate('validationMessage', e.target.value)}
               placeholder="ข้อความแจ้งเตือนเมื่อรูปแบบผิด" />
           </div>
+          )}
 
           {/* Condition logic */}
           <div>
             <Label>แสดงเมื่อ (Logic)</Label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', marginBottom: 6 }}>
               <input type="checkbox" checked={!!field.condition}
-                onChange={e => onUpdate('condition', e.target.checked ? { fieldId: '__shipping__', operator: 'equals', value: 'delivery' } : null)} />
+                onChange={e => onUpdate('condition', e.target.checked ? { logic: 'AND', rules: [{ fieldId: '__shipping__', operator: 'equals', value: 'delivery' }] } : null)} />
               เปิดใช้เงื่อนไข
             </label>
             {field.condition && (
-              <div style={{ background: 'var(--bg-deep)', borderRadius: 8, padding: 10, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>แสดงเมื่อ</span>
-                <Select value={field.condition.fieldId}
-                  onChange={e => onUpdate('condition', { ...field.condition, fieldId: e.target.value } as FieldCondition)}
-                  style={{ flex: 1, minWidth: 120, fontSize: 12 }}>
-                  <option value="__shipping__">การจัดส่ง</option>
-                  {allFields.filter(f => f.id !== field.id).map(f => (
-                    <option key={f.id} value={f.id}>{f.label}</option>
-                  ))}
-                </Select>
-                <Select value={field.condition.operator}
-                  onChange={e => onUpdate('condition', { ...field.condition, operator: e.target.value } as FieldCondition)}
-                  style={{ width: 120, fontSize: 12 }}>
-                  <option value="equals">= เท่ากับ</option>
-                  <option value="not_equals">≠ ไม่เท่ากับ</option>
-                  <option value="contains">∋ มีคำว่า</option>
-                </Select>
-                <Input value={field.condition.value}
-                  onChange={e => onUpdate('condition', { ...field.condition, value: e.target.value } as FieldCondition)}
-                  placeholder="delivery" style={{ flex: 1, minWidth: 70, fontSize: 12 }} />
-              </div>
+              <ConditionEditor label="แสดงเมื่อ" condition={normalizeCondition(field.condition)!}
+                allFields={allFields.filter(f => f.id !== field.id)}
+                onChange={cond => onUpdate('condition', cond)} />
             )}
           </div>
+
+          {/* Move to another topic — sections are just a grouping, so a field
+              can freely relocate without losing its id (anything referencing
+              it by id, like another section's condition, keeps working). */}
+          {sections.length > 1 && (
+            <div style={{ marginTop: 10 }}>
+              <Label>ย้ายไปหัวข้ออื่น</Label>
+              <Select value="" onChange={e => { if (e.target.value) onMoveToSection(e.target.value) }}>
+                <option value="">-- ย้ายไปหัวข้อ --</option>
+                {sections.filter(s => s.id !== sectionId).map(s => (
+                  <option key={s.id} value={s.id}>{s.title || 'หัวข้อใหม่'}</option>
+                ))}
+              </Select>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -217,9 +315,10 @@ function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, 
 }
 
 // ── Section card ─────────────────────────────────────────────────────────────
-function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, onRemoveField, onAddField, onMoveFieldUp, onMoveFieldDown, onMoveSectionUp, onMoveSectionDown, canMoveSectionUp, canMoveSectionDown }: {
+function SectionCard({ section, allFields, sections, onUpdate, onRemove, onUpdateField, onRemoveField, onAddField, onMoveFieldUp, onMoveFieldDown, onMoveFieldToSection, onMoveSectionUp, onMoveSectionDown, canMoveSectionUp, canMoveSectionDown }: {
   section: FormSection
   allFields: FormField[]
+  sections: { id: string; title: string }[]
   onUpdate: (key: keyof FormSection, val: unknown) => void
   onRemove: () => void
   onUpdateField: (fid: string, key: keyof FormField, val: unknown) => void
@@ -227,6 +326,7 @@ function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, on
   onAddField: (type: FieldType) => void
   onMoveFieldUp: (fid: string) => void
   onMoveFieldDown: (fid: string) => void
+  onMoveFieldToSection: (fid: string, toSectionId: string) => void
   onMoveSectionUp: () => void
   onMoveSectionDown: () => void
   canMoveSectionUp: boolean
@@ -251,7 +351,7 @@ function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, on
         {/* Section-level condition */}
         <label title="เงื่อนไขซ่อน/แสดงหัวข้อทั้งหมด" style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: section.condition ? 'var(--accent)' : 'var(--text-muted)', cursor: 'pointer', flexShrink: 0 }}>
           <input type="checkbox" checked={!!section.condition}
-            onChange={e => onUpdate('condition', e.target.checked ? { fieldId: '__shipping__', operator: 'equals', value: 'delivery' } : null)} />
+            onChange={e => onUpdate('condition', e.target.checked ? { logic: 'AND', rules: [{ fieldId: '__shipping__', operator: 'equals', value: 'delivery' }] } : null)} />
           ⚡ logic
         </label>
 
@@ -260,24 +360,10 @@ function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, on
 
       {/* Section condition config */}
       {section.condition && (
-        <div style={{ background: 'var(--bg-deep)', border: '1px solid var(--border-soft)', borderRadius: 9, padding: 10, marginBottom: 14, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>แสดงหัวข้อนี้เมื่อ</span>
-          <Select value={section.condition.fieldId}
-            onChange={e => onUpdate('condition', { ...section.condition, fieldId: e.target.value } as FieldCondition)}
-            style={{ flex: 1, minWidth: 120, fontSize: 12 }}>
-            <option value="__shipping__">การจัดส่ง</option>
-            {allFields.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-          </Select>
-          <Select value={section.condition.operator}
-            onChange={e => onUpdate('condition', { ...section.condition, operator: e.target.value } as FieldCondition)}
-            style={{ width: 130, fontSize: 12 }}>
-            <option value="equals">= เท่ากับ</option>
-            <option value="not_equals">≠ ไม่เท่ากับ</option>
-            <option value="contains">∋ มีคำว่า</option>
-          </Select>
-          <Input value={section.condition.value}
-            onChange={e => onUpdate('condition', { ...section.condition, value: e.target.value } as FieldCondition)}
-            placeholder="delivery" style={{ flex: 1, minWidth: 70, fontSize: 12 }} />
+        <div style={{ marginBottom: 14 }}>
+          <ConditionEditor label="แสดงหัวข้อนี้เมื่อ" condition={normalizeCondition(section.condition)!}
+            allFields={allFields}
+            onChange={cond => onUpdate('condition', cond)} />
         </div>
       )}
 
@@ -286,11 +372,12 @@ function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, on
         <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0 12px', textAlign: 'center' }}>ยังไม่มีฟิลด์ กดปุ่มด้านล่างเพื่อเพิ่ม</div>
       )}
       {section.fields.map((f, idx) => (
-        <FieldCard key={f.id} field={f} allFields={allFields} sectionId={section.id}
+        <FieldCard key={f.id} field={f} allFields={allFields} sectionId={section.id} sections={sections}
           onUpdate={(key, val) => onUpdateField(f.id, key, val)}
           onRemove={() => onRemoveField(f.id)}
           onMoveUp={() => onMoveFieldUp(f.id)}
           onMoveDown={() => onMoveFieldDown(f.id)}
+          onMoveToSection={(toSectionId) => onMoveFieldToSection(f.id, toSectionId)}
           canMoveUp={idx > 0}
           canMoveDown={idx < section.fields.length - 1}
         />
@@ -298,7 +385,7 @@ function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, on
 
       {/* Add field buttons */}
       <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-        {FIELD_TYPES.map(t => (
+        {FIELD_TYPES.filter(t => t.value !== 'shipping' || !allFields.some(f => f.type === 'shipping')).map(t => (
           <button key={t.value} onClick={() => onAddField(t.value)}
             style={{ background: 'var(--bg-deep)', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-body)' }}>
             + {t.icon} {t.label}
@@ -328,11 +415,14 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
 
   const addField = (sid: string, type: FieldType) => {
     const preset = PRESET_REGEX[type]
+    const isShipping = type === 'shipping'
     setForm({
       ...form, sections: form.sections.map(s => s.id === sid ? {
         ...s, fields: [...s.fields, {
-          id: uid(), type, label: FIELD_TYPES.find(t => t.value === type)?.label || 'ฟิลด์ใหม่',
-          placeholder: '', required: false, width: 'full', options: [],
+          id: uid(), type, label: isShipping ? 'วิธีรับสินค้า' : (FIELD_TYPES.find(t => t.value === type)?.label || 'ฟิลด์ใหม่'),
+          placeholder: '', required: true, width: 'full',
+          options: isShipping ? ['รับที่สถานที่', 'จัดส่งทางไปรษณีย์'] : [],
+          shippingCost: isShipping ? 0 : undefined,
           validationRegex: preset?.pattern || '',
           validationMessage: preset?.msg || '',
         }]
@@ -379,6 +469,22 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
     setForm({ ...form, sections })
   }
 
+  // Relocates a field to a different topic without touching its id — anything
+  // that references it by id (e.g. another section's show/hide condition)
+  // keeps working no matter which topic it currently lives under.
+  const moveFieldToSection = (fromSid: string, fid: string, toSid: string) => {
+    if (fromSid === toSid) return
+    const field = form.sections.find(s => s.id === fromSid)?.fields.find(f => f.id === fid)
+    if (!field) return
+    setForm({
+      ...form, sections: form.sections.map(s => {
+        if (s.id === fromSid) return { ...s, fields: s.fields.filter(f => f.id !== fid) }
+        if (s.id === toSid) return { ...s, fields: [...s.fields, field] }
+        return s
+      })
+    })
+  }
+
   return (
     <div>
       <Card style={{ marginBottom: 20 }}>
@@ -391,11 +497,12 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
 
       <div style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: 'var(--purple)', lineHeight: 1.6 }}>
         💡 <strong>Logic:</strong> กดลูกศร ▲▼ เพื่อเรียงหัวข้อ/ฟิลด์ · ⚡ เพื่อกำหนดเงื่อนไขแสดง/ซ่อน ·
-        ฟิลด์ประเภท Dropdown/Choice ที่มีตัวเลือกตั้งแต่ 2 ขึ้นไป เปิด <strong>🚚 ใช้เป็นตัวแปรวิธีจัดส่ง</strong> ได้ เพื่อกำหนดค่าจัดส่งและใช้เป็นเงื่อนไขที่อื่น (เช่นซ่อน/แสดงหัวข้อที่อยู่)
+        เพิ่มฟิลด์ <strong>🚚 วิธีจัดส่ง</strong> ในหัวข้อไหนก็ได้เพื่อกำหนดวิธีรับสินค้า แล้วใช้ชื่อฟิลด์นั้นเป็นเงื่อนไขที่อื่นได้
       </div>
 
       {form.sections.map((sec, idx) => (
         <SectionCard key={sec.id} section={sec} allFields={allFields}
+          sections={form.sections.map(s => ({ id: s.id, title: s.title }))}
           onUpdate={(key, val) => updateSection(sec.id, key, val)}
           onRemove={() => removeSection(sec.id)}
           onUpdateField={(fid, key, val) => updateField(sec.id, fid, key, val)}
@@ -403,6 +510,7 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
           onAddField={(type) => addField(sec.id, type)}
           onMoveFieldUp={(fid) => moveField(sec.id, fid, -1)}
           onMoveFieldDown={(fid) => moveField(sec.id, fid, 1)}
+          onMoveFieldToSection={(fid, toSid) => moveFieldToSection(sec.id, fid, toSid)}
           onMoveSectionUp={() => moveSection(sec.id, -1)}
           onMoveSectionDown={() => moveSection(sec.id, 1)}
           canMoveSectionUp={idx > 0}
