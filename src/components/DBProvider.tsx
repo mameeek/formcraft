@@ -1,15 +1,13 @@
 'use client'
-import { useEffect } from 'react'
 import { useAppStore } from '@/store'
 
+// Only renders the shared loading/error indicators — it no longer fetches
+// anything itself. Public pages (/form) load products+form only; admin pages
+// load submissions too, but only after an admin session is confirmed. See
+// AdminGuard and the /form page for the actual loadPublicData/loadAdminData calls.
 export function DBProvider({ children }: { children: React.ReactNode }) {
-  const loadFromDB = useAppStore((s) => s.loadFromDB)
   const error = useAppStore((s) => s.error)
   const loading = useAppStore((s) => s.loading)
-
-  useEffect(() => {
-    loadFromDB()
-  }, [])
 
   return (
     <>

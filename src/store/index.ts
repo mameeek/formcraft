@@ -2,6 +2,7 @@
 
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { Session } from '@supabase/supabase-js'
 import type { Product, FormConfig, Submission, CartItem, PaymentStatus } from '@/types'
 import { defaultProducts, defaultForm } from '@/lib/defaults'
 import { uid } from '@/lib/utils'
@@ -13,10 +14,14 @@ interface AppStore {
   form: FormConfig
   submissions: Submission[]
   loading: boolean
+  submissionsLoaded: boolean
   error: string | null
   dbConnected: boolean
 
-  loadFromDB: () => Promise<void>
+  /** Public data only (products + form config) — safe for the unauthenticated form page. */
+  loadPublicData: () => Promise<void>
+  /** Public data + submissions — only call this once an admin session is confirmed. */
+  loadAdminData: () => Promise<void>
   setProducts: (p: Product[]) => void
   saveProducts: (p: Product[]) => Promise<void>
   setForm: (f: FormConfig) => void
@@ -51,40 +56,72 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   form: defaultForm,
   submissions: [],
   loading: false,
+  submissionsLoaded: false,
   error: null,
   dbConnected: false,
 
-  loadFromDB: async () => {
+  loadPublicData: async () => {
     if (get().loading) return
     set({ loading: true, error: null })
     try {
       const [
-        { data: prodRows,  error: prodErr  },
-        { data: formRow,   error: formErr  },
-        { data: subRows,   error: subErr   },
+        { data: prodRows, error: prodErr },
+        { data: formRow,  error: formErr },
+      ] = await Promise.all([
+        supabase.from('products').select('data'),
+        supabase.from('form_config').select('data').eq('id', 'main').maybeSingle(),
+      ])
+
+      if (prodErr) console.error('❌ products:', prodErr)
+      if (formErr) console.error('❌ form:', formErr)
+
+      const products = prodRows ? (prodRows as any[]).map(r => r.data) : null
+      const form     = formRow  ? (formRow  as any).data               : null
+
+      set({
+        products:    products && products.length > 0 ? products : defaultProducts,
+        form:        form ?? defaultForm,
+        loading:     false,
+        dbConnected: true,
+      })
+    } catch (e) {
+      console.error('❌ loadPublicData failed:', e)
+      set({ loading: false, error: 'ไม่สามารถเชื่อมต่อ Database ได้', dbConnected: false })
+    }
+  },
+
+  loadAdminData: async () => {
+    if (get().loading) return
+    set({ loading: true, error: null })
+    try {
+      const [
+        { data: prodRows, error: prodErr },
+        { data: formRow,  error: formErr },
+        { data: subRows,  error: subErr  },
       ] = await Promise.all([
         supabase.from('products').select('data'),
         supabase.from('form_config').select('data').eq('id', 'main').maybeSingle(),
         supabase.from('submissions').select('*').order('submitted_at', { ascending: false }),
       ])
 
-      if (prodErr)  console.error('❌ products:', prodErr)
-      if (formErr)  console.error('❌ form:', formErr)
-      if (subErr)   console.error('❌ submissions:', subErr)
+      if (prodErr) console.error('❌ products:', prodErr)
+      if (formErr) console.error('❌ form:', formErr)
+      if (subErr)  console.error('❌ submissions:', subErr)
 
-      const products    = prodRows  ? (prodRows  as any[]).map(r => r.data) : null
-      const form        = formRow   ? (formRow   as any).data               : null
-      const submissions = subRows   ? (subRows   as any[]).map(mapRow)      : null
+      const products    = prodRows ? (prodRows as any[]).map(r => r.data) : null
+      const form        = formRow  ? (formRow  as any).data               : null
+      const submissions = subRows  ? (subRows  as any[]).map(mapRow)      : null
 
       set({
-        products:    products && products.length > 0 ? products : defaultProducts,
-        form:        form ?? defaultForm,
-        submissions: submissions ?? [],
-        loading:     false,
-        dbConnected: true,
+        products:          products && products.length > 0 ? products : defaultProducts,
+        form:              form ?? defaultForm,
+        submissions:       submissions ?? [],
+        loading:           false,
+        submissionsLoaded: true,
+        dbConnected:       true,
       })
     } catch (e) {
-      console.error('❌ loadFromDB failed:', e)
+      console.error('❌ loadAdminData failed:', e)
       set({ loading: false, error: 'ไม่สามารถเชื่อมต่อ Database ได้', dbConnected: false })
     }
   },
@@ -170,6 +207,47 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   resetAll: () => set({ products: defaultProducts, form: defaultForm, submissions: [] }),
+}))
+
+// ─── Auth Store (Supabase Auth — gates the admin dashboard) ────────────────────
+interface AuthStore {
+  session: Session | null
+  initialized: boolean
+  error: string | null
+  signingIn: boolean
+  init: () => void
+  signInWithPassword: (email: string, password: string) => Promise<boolean>
+  signOut: () => Promise<void>
+}
+
+export const useAuthStore = create<AuthStore>()((set, get) => ({
+  session: null,
+  initialized: false,
+  error: null,
+  signingIn: false,
+
+  init: () => {
+    if (get().initialized) return
+    set({ initialized: true })
+    supabase.auth.getSession().then(({ data }) => set({ session: data.session }))
+    supabase.auth.onAuthStateChange((_event, session) => set({ session }))
+  },
+
+  signInWithPassword: async (email, password) => {
+    set({ signingIn: true, error: null })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      set({ signingIn: false, error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' })
+      return false
+    }
+    set({ signingIn: false, session: data.session })
+    return true
+  },
+
+  signOut: async () => {
+    await supabase.auth.signOut()
+    set({ session: null })
+  },
 }))
 
 // ─── Cart Store (localStorage) ─────────────────────────────────────────────────

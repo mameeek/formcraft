@@ -269,8 +269,12 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
   const updateSection = (sid: string, key: keyof FormSection, val: unknown) =>
     setForm({ ...form, sections: form.sections.map(s => s.id === sid ? { ...s, [key]: val } : s) })
 
-  const removeSection = (sid: string) =>
+  const removeSection = (sid: string) => {
+    const section = form.sections.find(s => s.id === sid)
+    const label = section ? `หัวข้อ "${section.title}"${section.fields.length ? ` (${section.fields.length} ฟิลด์)` : ''}` : 'หัวข้อนี้'
+    if (!window.confirm(`ลบ${label}? (การเปลี่ยนแปลงนี้จะยังไม่บันทึกจนกว่าจะกด "บันทึกการเปลี่ยนแปลง")`)) return
     setForm({ ...form, sections: form.sections.filter(s => s.id !== sid) })
+  }
 
   const addSection = () =>
     setForm({ ...form, sections: [...form.sections, { id: uid(), title: 'หัวข้อใหม่', fields: [], condition: null }] })
@@ -296,12 +300,15 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
       } : s)
     })
 
-  const removeField = (sid: string, fid: string) =>
+  const removeField = (sid: string, fid: string) => {
+    const field = form.sections.find(s => s.id === sid)?.fields.find(f => f.id === fid)
+    if (!window.confirm(`ลบฟิลด์ "${field?.label || ''}"? (การเปลี่ยนแปลงนี้จะยังไม่บันทึกจนกว่าจะกด "บันทึกการเปลี่ยนแปลง")`)) return
     setForm({
       ...form, sections: form.sections.map(s => s.id === sid ? {
         ...s, fields: s.fields.filter(f => f.id !== fid)
       } : s)
     })
+  }
 
   const moveField = (sid: string, fid: string, dir: 1 | -1) =>
     setForm({

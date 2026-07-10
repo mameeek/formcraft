@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useAppStore } from '@/store'
+import { usePathname, useRouter } from 'next/navigation'
+import { useAppStore, useAuthStore } from '@/store'
 
 const navItems = [
   { href: '/dashboard',   label: 'หน้าหลัก',     icon: '⊞' },
@@ -13,7 +13,14 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const router = useRouter()
   const { form, submissions } = useAppStore()
+  const signOut = useAuthStore((s) => s.signOut)
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.replace('/login')
+  }
 
   return (
     <div style={{
@@ -95,8 +102,15 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text-muted)' }}>
-        FormCraft
+      <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)' }}>
+        <button onClick={handleSignOut} style={{
+          width: '100%', background: 'transparent', border: '1px solid var(--border)',
+          color: 'var(--text-muted)', borderRadius: 8, padding: '8px 0',
+          fontSize: 12, cursor: 'pointer', marginBottom: 8,
+        }}>
+          ออกจากระบบ
+        </button>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>FormCraft</div>
       </div>
     </div>
   )

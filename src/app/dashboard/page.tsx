@@ -1,16 +1,11 @@
 'use client'
-import { useEffect } from 'react'
 import Link from 'next/link'
 import { useAppStore } from '@/store'
 import { StatCard, Card, Btn } from '@/components/ui'
 import { fmt } from '@/lib/utils'
 
 export default function DashboardPage() {
-  const { form, submissions, products, loadFromDB } = useAppStore()
-  
-  useEffect(() => {
-    loadFromDB()
-  }, [])
+  const { form, submissions, products } = useAppStore()
 
   const totalRevenue = submissions.reduce((s, sub) => s + (sub.totalAmount || 0), 0)
   const todayStr = new Date().toISOString().slice(0, 10)

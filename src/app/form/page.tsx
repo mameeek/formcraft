@@ -776,9 +776,9 @@ function DoneScreen({ shippingMethod, slipName, text, subtext, cardBorder }: {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function FormPage() {
-  const { form, products, addSubmission, loadFromDB } = useAppStore()
+  const { form, products, addSubmission, loadPublicData } = useAppStore()
     useEffect(() => {
-      loadFromDB()
+      loadPublicData()
     }, [])
   
   const { items, addItem, updateQty, removeItem, clearCart } = useCartStore()
