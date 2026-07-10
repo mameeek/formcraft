@@ -2,20 +2,7 @@
 
 import type { FormConfig } from '@/types'
 import { Card, Label, Input } from '@/components/ui'
-import { supabase } from '@/lib/db'
-import { uid } from '@/lib/utils'
-
-async function uploadToStorage(file: File): Promise<string | null> {
-  const ext = file.name.split('.').pop() || 'jpg'
-  const filename = `${uid()}.${ext}`
-  const bytes = await file.arrayBuffer()
-  const { error } = await supabase.storage
-    .from('uploads')
-    .upload(filename, bytes, { contentType: file.type })
-  if (error) { console.error('Upload failed:', error); return null }
-  const { data } = supabase.storage.from('uploads').getPublicUrl(filename)
-  return data.publicUrl
-}
+import { uploadToStorage } from '@/lib/storage'
 
 export default function FormSettings({ form, setForm }: { form: FormConfig; setForm: (f: FormConfig) => void }) {
   const update = (key: keyof FormConfig, val: unknown) => setForm({ ...form, [key]: val })

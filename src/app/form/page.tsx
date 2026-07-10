@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useAppStore, useCartStore } from '@/store'
 import type { CartItem, FormField, Product, ProductVariant, FieldCondition } from '@/types'
 import { getProductVariants, fmt, buildReceiptLines } from '@/lib/utils'
+import { uploadToStorage } from '@/lib/storage'
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 function useTheme() {
@@ -700,10 +701,10 @@ function CartStep({ items, updateQty, removeItem, subtotal, shippingCost, shippi
 }
 
 // ─── Payment Step ─────────────────────────────────────────────────────────────
-function PaymentStep({ form, total, slipFile, setSlipFile, onSubmit, onBack, accent, text, subtext, cardBg, cardBorder }: {
+function PaymentStep({ form, total, slipFile, setSlipFile, onSubmit, onBack, submitting, accent, text, subtext, cardBg, cardBorder }: {
   form: AppStore['form']
   total: number; slipFile: File | null; setSlipFile: (f: File | null) => void
-  onSubmit: () => void; onBack: () => void
+  onSubmit: () => void; onBack: () => void; submitting: boolean
   accent: string; text: string; subtext: string; cardBg: string; cardBorder: string
 }) {
   const cells = 11
@@ -748,8 +749,10 @@ function PaymentStep({ form, total, slipFile, setSlipFile, onSubmit, onBack, acc
         </label>
       </div>
 
-      <button onClick={onSubmit} disabled={!slipFile} style={{ ...pBtn(accent), opacity: slipFile ? 1 : 0.4, marginBottom: 9 }}>✅ ยืนยันคำสั่งซื้อ</button>
-      <button onClick={onBack} style={sBtn}>← ย้อนกลับ</button>
+      <button onClick={onSubmit} disabled={!slipFile || submitting} style={{ ...pBtn(accent), opacity: slipFile && !submitting ? 1 : 0.4, marginBottom: 9 }}>
+        {submitting ? '⏳ กำลังส่ง...' : '✅ ยืนยันคำสั่งซื้อ'}
+      </button>
+      <button onClick={onBack} disabled={submitting} style={sBtn}>← ย้อนกลับ</button>
     </div>
   )
 }
@@ -803,6 +806,7 @@ export default function FormPage() {
   const [done, setDone]                     = useState(false)
   const [doneSlipName, setDoneSlipName]     = useState<string>()
   const [modalProd, setModalProd]           = useState<{ prod: Product; virtual?: VirtualProduct } | null>(null)
+  const [submitting, setSubmitting]         = useState(false)
 
   const subtotal    = items.reduce((s, i) => s + i.unitPrice * i.qty, 0)
   const shippingCost = shippingMethod === 'delivery' && form.shipping?.enabled ? (form.shipping.cost || 0) : 0
@@ -826,22 +830,31 @@ export default function FormPage() {
   }
 
   const handleSubmit = useCallback(async () => {
-    // Store slip as base64 so it persists
-    let slipData: string | null = null
-    if (slipFile) {
-      slipData = await new Promise<string>((res, rej) => {
-        const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(slipFile)
-      })
+    if (!slipFile || submitting) return
+    setSubmitting(true)
+    try {
+      // Upload to Storage rather than embedding base64 — keeps submission
+      // rows small so the admin dashboard stays fast as orders pile up.
+      const slipUrl = await uploadToStorage(slipFile)
+      if (!slipUrl) {
+        alert('อัปโหลดสลิปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+        return
+      }
+      const allFields = form.sections.flatMap(s => s.fields)
+      const nameF  = allFields.find(f => f.type === 'text' && (f.label.includes('ชื่อ') || f.label.toLowerCase().includes('name')))
+      const phoneF = allFields.find(f => f.type === 'tel')
+      const emailF = allFields.find(f => f.type === 'email')
+      await addSubmission({ customerName: nameF ? (fieldValues[nameF.id] || 'ไม่ระบุ') : 'ไม่ระบุ', customerPhone: phoneF ? (fieldValues[phoneF.id] || '') : '', customerEmail: emailF ? (fieldValues[emailF.id] || '') : '', fieldValues, items, shippingMethod: shippingMethod as 'pickup' | 'delivery', subtotal, shipping: shippingCost, totalAmount: total, paymentSlip: slipUrl })
+      setDoneSlipName(slipFile.name)
+      clearCart()
+      setDone(true)
+    } catch (e) {
+      console.error('handleSubmit failed:', e)
+      alert('ส่งคำสั่งซื้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง')
+    } finally {
+      setSubmitting(false)
     }
-    const allFields = form.sections.flatMap(s => s.fields)
-    const nameF  = allFields.find(f => f.type === 'text' && (f.label.includes('ชื่อ') || f.label.toLowerCase().includes('name')))
-    const phoneF = allFields.find(f => f.type === 'tel')
-    const emailF = allFields.find(f => f.type === 'email')
-    await addSubmission({ customerName: nameF ? (fieldValues[nameF.id] || 'ไม่ระบุ') : 'ไม่ระบุ', customerPhone: phoneF ? (fieldValues[phoneF.id] || '') : '', customerEmail: emailF ? (fieldValues[emailF.id] || '') : '', fieldValues, items, shippingMethod: shippingMethod as 'pickup' | 'delivery', subtotal, shipping: shippingCost, totalAmount: total, paymentSlip: slipData })
-    setDoneSlipName(slipFile?.name)
-    clearCart()
-    setDone(true)
-  }, [form, fieldValues, items, shippingMethod, subtotal, shippingCost, total, slipFile, addSubmission, clearCart])
+  }, [form, fieldValues, items, shippingMethod, subtotal, shippingCost, total, slipFile, submitting, addSubmission, clearCart])
 
   return (
     <div style={{ minHeight: '100vh', background: bg }}>
@@ -891,7 +904,7 @@ export default function FormPage() {
         ) : (
           <PaymentStep form={form} total={total} slipFile={slipFile} setSlipFile={setSlipFile}
             accent={accent} text={text} subtext={subtext} cardBg={cardBg} cardBorder={cardBorder}
-            onSubmit={handleSubmit} onBack={() => setStep('cart')} />
+            onSubmit={handleSubmit} onBack={() => setStep('cart')} submitting={submitting} />
         )}
       </div>
 

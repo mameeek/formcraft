@@ -23,9 +23,11 @@ interface AppStore {
   /** Public data + submissions — only call this once an admin session is confirmed. */
   loadAdminData: () => Promise<void>
   setProducts: (p: Product[]) => void
-  saveProducts: (p: Product[]) => Promise<void>
+  /** Returns true on success, false if the write failed (store.error is set too). */
+  saveProducts: (p: Product[]) => Promise<boolean>
   setForm: (f: FormConfig) => void
-  saveForm: (f: FormConfig) => Promise<void>
+  /** Returns true on success, false if the write failed (store.error is set too). */
+  saveForm: (f: FormConfig) => Promise<boolean>
   addSubmission: (s: Omit<Submission, 'id' | 'submittedAt' | 'paymentStatus'>) => Promise<void>
   updateSubmissionPayment: (id: string, status: PaymentStatus, note?: string) => Promise<void>
   resetAll: () => void
@@ -138,9 +140,11 @@ export const useAppStore = create<AppStore>()((set, get) => ({
         )
         if (error) throw error
       }
+      return true
     } catch (e) {
       console.error('saveProducts:', e)
       set({ error: 'บันทึกสินค้าไม่สำเร็จ' })
+      return false
     }
   },
 
@@ -153,9 +157,11 @@ export const useAppStore = create<AppStore>()((set, get) => ({
         .from('form_config')
         .upsert({ id: 'main', data: form, updated_at: new Date().toISOString() }, { onConflict: 'id' })
       if (error) throw error
+      return true
     } catch (e) {
       console.error('saveForm:', e)
       set({ error: 'บันทึกฟอร์มไม่สำเร็จ' })
+      return false
     }
   },
 

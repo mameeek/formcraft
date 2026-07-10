@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { uploadToStorage } from '@/lib/storage'
 
 interface ImageUploaderProps {
   images: string[]
@@ -8,19 +9,10 @@ interface ImageUploaderProps {
   maxImages?: number
 }
 
-/** Read a File as base64 data URL — pure client-side, no server/API needed */
-function readFileAsDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'))
-    reader.readAsDataURL(file)
-  })
-}
-
 export default function ImageUploader({ images, onChange, maxImages = 6 }: ImageUploaderProps) {
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const processFiles = useCallback(async (files: FileList | File[]) => {
     const fileArray = Array.from(files).filter(f => f.type.startsWith('image/'))
@@ -31,11 +23,18 @@ export default function ImageUploader({ images, onChange, maxImages = 6 }: Image
     const toProcess = fileArray.slice(0, remaining)
 
     setUploading(true)
+    setError(null)
     try {
-      const dataUrls = await Promise.all(toProcess.map(readFileAsDataURL))
-      onChange([...images, ...dataUrls])
+      // Upload to Supabase Storage — images used to be embedded as base64
+      // directly in the product row, which bloated every fetch (a single
+      // product could carry 1MB+ of text per photo). Store a URL instead.
+      const urls = await Promise.all(toProcess.map(uploadToStorage))
+      const ok = urls.filter((u): u is string => !!u)
+      if (ok.length < toProcess.length) setError('บางรูปอัปโหลดไม่สำเร็จ ลองใหม่อีกครั้ง')
+      if (ok.length) onChange([...images, ...ok])
     } catch (e) {
-      console.error('อ่านไฟล์ไม่สำเร็จ:', e)
+      console.error('อัปโหลดไม่สำเร็จ:', e)
+      setError('อัปโหลดไม่สำเร็จ')
     } finally {
       setUploading(false)
     }
@@ -128,6 +127,7 @@ export default function ImageUploader({ images, onChange, maxImages = 6 }: Image
           )}
         </label>
       )}
+      {error && <div style={{ color: '#f87171', fontSize: 12, marginTop: 6 }}>⚠ {error}</div>}
     </div>
   )
 }

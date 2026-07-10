@@ -76,17 +76,22 @@ create policy "submissions admin update" on submissions
   for update using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 -- ─── Storage ("uploads" bucket) ─────────────────────────────────────────────
--- Product photos / banner / QR / payment slips live in the "uploads" bucket.
--- Images need to stay publicly readable (they're rendered on the public form),
--- but only logged-in admins should be able to upload new files. Run this once
--- the bucket exists (create it in Dashboard → Storage if you haven't already).
-drop policy if exists "uploads public read"  on storage.objects;
-drop policy if exists "uploads admin write"  on storage.objects;
+-- Product photos / banner / QR live here (uploaded by admins), and so do
+-- payment slips (uploaded anonymously by customers during checkout — the
+-- public form has no login, so this can't be locked to authenticated only).
+-- Files are named with a random uid, so in practice they're only reachable
+-- by whoever has the URL — not a real access-control boundary. If slip
+-- privacy matters more than convenience, move slips to a separate private
+-- bucket and serve them via signed URLs instead. Run this once the bucket
+-- exists (create it in Dashboard → Storage if you haven't already).
+drop policy if exists "uploads public read"    on storage.objects;
+drop policy if exists "uploads admin write"    on storage.objects;
+drop policy if exists "uploads public insert"  on storage.objects;
 
 create policy "uploads public read" on storage.objects
   for select using (bucket_id = 'uploads');
-create policy "uploads admin write" on storage.objects
-  for insert with check (bucket_id = 'uploads' and auth.role() = 'authenticated');
+create policy "uploads public insert" on storage.objects
+  for insert with check (bucket_id = 'uploads');
 
 -- ─── Admin login ─────────────────────────────────────────────────────────────
 -- Create the admin's login in Supabase Dashboard → Authentication → Users →
