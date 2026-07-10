@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useAppStore, useCartStore } from '@/store'
 import type { CartItem, FormField, Product, ProductVariant, FieldCondition } from '@/types'
-import { getProductVariants, fmt, buildReceiptLines } from '@/lib/utils'
+import { getProductVariants, getEffectiveUnitPrice, fmt, buildReceiptLines } from '@/lib/utils'
 import { uploadToStorage } from '@/lib/storage'
+import { supabase } from '@/lib/db'
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 function useTheme() {
@@ -215,8 +217,8 @@ function ProductCard({ prod, virtual, cartItems, accent, cardBg, cardBorder, tex
           </div>
         )}
         <div style={{ marginTop: 'auto', paddingTop: 5 }}>
-          {prod.originalPrice && <div style={{ fontSize: 11, color: subtext, textDecoration: 'line-through' }}>฿{fmt(prod.originalPrice)}</div>}
-          <div style={{ fontSize: 17, fontWeight: 800, color: accent }}>฿{fmt(prod.price)}</div>
+          {prod.originalPrice && (!virtual || virtual.price === prod.price) && <div style={{ fontSize: 11, color: subtext, textDecoration: 'line-through' }}>฿{fmt(prod.originalPrice)}</div>}
+          <div style={{ fontSize: 17, fontWeight: 800, color: accent }}>฿{fmt(virtual ? virtual.price : prod.price)}</div>
         </div>
       </div>
     </div>
@@ -256,7 +258,8 @@ function ConfigureModal({ prod, allProducts, accent, cardBg, cardBorder, text, s
   }, [prod, selections])
 
   const existingItems = cartItems.filter(c => c.productId === prod.id)
-  const runningTotal  = qty * prod.price
+  const unitPrice     = getEffectiveUnitPrice(prod, allProducts, selections)
+  const runningTotal  = qty * unitPrice
 
   const getSubProdId = (vid: string) => vid.includes('__') ? vid.split('__')[0] : null
 
@@ -281,7 +284,7 @@ function ConfigureModal({ prod, allProducts, accent, cardBg, cardBorder, text, s
     // Only the cover image is ever displayed for a cart line (item.productImages?.[0]),
     // but this whole array gets snapshotted into the order record — storing all of a
     // product's photos here multiplied straight into submissions.items bloat.
-    addItem({ productId: prod.id, productName: prod.name, productCode: prod.code, productImages: prod.images.slice(0, 1), unitPrice: prod.price, qty, variantSelections: { ...selections }, variantCodes: { ...selCodes }, isSet: prod.type === 'set', setDetails })
+    addItem({ productId: prod.id, productName: prod.name, productCode: prod.code, productImages: prod.images.slice(0, 1), unitPrice, qty, variantSelections: { ...selections }, variantCodes: { ...selCodes }, isSet: prod.type === 'set', setDetails })
 
     // Reset for both set and single
     setSelections(prefillVariant ? { [prefillVariant.variantId]: prefillVariant.optionLabel } : {})
@@ -319,8 +322,8 @@ function ConfigureModal({ prod, allProducts, accent, cardBg, cardBorder, text, s
           )}
 
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 18 }}>
-            <span style={{ fontSize: 24, fontWeight: 800, color: text }}>฿{fmt(prod.price)}</span>
-            {prod.originalPrice && <span style={{ fontSize: 13, color: subtext, textDecoration: 'line-through' }}>฿{fmt(prod.originalPrice)}</span>}
+            <span style={{ fontSize: 24, fontWeight: 800, color: text }}>฿{fmt(unitPrice)}</span>
+            {prod.originalPrice && unitPrice === prod.price && <span style={{ fontSize: 13, color: subtext, textDecoration: 'line-through' }}>฿{fmt(prod.originalPrice)}</span>}
           </div>
 
           {prod.type === 'set' && setIdx > 0 && (
@@ -492,7 +495,11 @@ function InfoStep({ form, fieldValues, setFieldValues, shippingMethod, setShippi
         )
       })}
 
-      {form.shipping?.enabled && (
+      {/* Legacy global shipping toggle — only used as a fallback for forms
+          that don't have a field flagged isShippingVariable yet (that field
+          renders inline with its topic above, via its normal choice/dropdown
+          case — no special-casing needed here). */}
+      {form.shipping?.enabled && !form.sections.some(s => s.fields.some(f => f.isShippingVariable)) && (
         <div style={{ marginBottom: 26 }}>
           <h3 style={{ fontSize: 17, fontWeight: 700, color: text, marginBottom: 12 }}>วิธีรับสินค้า</h3>
           {[{ val: 'pickup', icon: '🏫', label: 'รับที่สถานที่', note: 'ฟรี' },
@@ -536,7 +543,7 @@ function ProductsStep({ products, cartItems, accent, cardBg, cardBorder, text, s
             realProductId: prod.id, variantId: expandV.id,
             optionId: opt.id, optionLabel: opt.label, optionCode: opt.code,
             name: `${prod.name} – ${opt.label}`, code: `${prod.code}_${opt.code}`,
-            price: prod.price, images: opt.image ? [opt.image, ...prod.images] : prod.images,
+            price: opt.priceOverride ?? prod.price, images: opt.image ? [opt.image, ...prod.images] : prod.images,
             tags: prod.tags, aspectRatio: prod.aspectRatio,
           },
         })
@@ -780,15 +787,49 @@ function DoneScreen({ shippingMethod, slipName, text, subtext, cardBorder }: {
   )
 }
 
+// ─── Status screen (not open yet / closed / full / not found) ────────────────
+const STATUS_CONTENT: Record<string, { icon: string; title: string; sub: string }> = {
+  not_open: { icon: '⏳', title: 'ฟอร์มยังไม่เปิดรับ', sub: 'กรุณากลับมาใหม่ในช่วงเวลาที่กำหนด' },
+  closed:   { icon: '🔒', title: 'ฟอร์มปิดรับแล้ว',   sub: 'ขอบคุณสำหรับความสนใจ ฟอร์มนี้หมดเวลารับคำสั่งซื้อแล้ว' },
+  full:     { icon: '📪', title: 'ฟอร์มเต็มแล้ว',      sub: 'มีผู้ตอบครบตามจำนวนที่กำหนดแล้ว ขอบคุณที่สนใจ' },
+  not_found:{ icon: '❓', title: 'ไม่พบฟอร์มนี้',       sub: 'ลิงก์นี้อาจไม่ถูกต้องหรือฟอร์มถูกลบไปแล้ว' },
+}
+
+function StatusScreen({ status, text, subtext }: { status: keyof typeof STATUS_CONTENT; text: string; subtext: string }) {
+  const c = STATUS_CONTENT[status]
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ textAlign: 'center', maxWidth: 320 }}>
+        <div style={{ fontSize: 56, marginBottom: 16 }}>{c.icon}</div>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: text, marginBottom: 8 }}>{c.title}</h2>
+        <p style={{ color: subtext, fontSize: 13, lineHeight: 1.7 }}>{c.sub}</p>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
-export default function FormPage() {
-  const { form, products, addSubmission, loadPublicData } = useAppStore()
-    useEffect(() => {
-      loadPublicData()
-    }, [])
-  
-  const { items, addItem, updateQty, removeItem, clearCart } = useCartStore()
+function FormPageContent() {
+  const searchParams = useSearchParams()
+  const slug = searchParams.get('f') || 'main'
+
+  const { form, products, addSubmission, loadPublicData, currentFormId, error: loadError } = useAppStore()
+  useEffect(() => {
+    loadPublicData(slug)
+  }, [slug])
+
+  const { items, addItem, updateQty, removeItem, clearCart } = useCartStore(slug)
   const { accent, bg, text, subtext, cardBg, cardBorder } = useTheme()
+
+  // Response-limit check — only fetched once we know which form this is, and
+  // only when the setting is actually on (no point counting otherwise).
+  const [responseCount, setResponseCount] = useState<number | null>(null)
+  useEffect(() => {
+    if (!currentFormId || !form.responseLimit?.enabled) return
+    supabase.rpc('form_submission_count', { p_form_id: currentFormId }).then(({ data }) => {
+      if (typeof data === 'number') setResponseCount(data)
+    })
+  }, [currentFormId, form.responseLimit?.enabled])
 
   const [step, setStep] = useState<Step>('info')
   // Once a step has been visited it stays mounted (just hidden via CSS)
@@ -808,7 +849,9 @@ export default function FormPage() {
   }
   
   const [fieldValues, setFieldValues]       = useState<Record<string, string>>({})
-  const [shippingMethod, setShippingMethod] = useState('pickup')
+  // Legacy fallback state — only actually used when the form has no
+  // 🚚 วิธีจัดส่ง field (older forms still on the global form.shipping toggle).
+  const [legacyShippingMethod, setLegacyShippingMethod] = useState('pickup')
   const [slipFile, setSlipFile]             = useState<File | null>(null)
   const [errors, setErrors]                 = useState<Record<string, string>>({})
   const [done, setDone]                     = useState(false)
@@ -816,8 +859,32 @@ export default function FormPage() {
   const [modalProd, setModalProd]           = useState<{ prod: Product; virtual?: VirtualProduct } | null>(null)
   const [submitting, setSubmitting]         = useState(false)
 
+  // If any field is flagged isShippingVariable (a normal choice/dropdown
+  // field), it's the source of truth — driven by fieldValues like any other
+  // field, no special rendering needed. Otherwise fall back to the legacy
+  // global toggle/state for forms that predate this.
+  const shippingField = useMemo(
+    () => form.sections.flatMap(s => s.fields).find(f => f.isShippingVariable),
+    [form.sections]
+  )
+  const shippingMethod: string = shippingField
+    ? (fieldValues[shippingField.id] === shippingField.deliveryOption ? 'delivery' : 'pickup')
+    : legacyShippingMethod
+  const setShippingMethod = (v: string) => {
+    if (shippingField) {
+      const label = v === 'delivery'
+        ? (shippingField.deliveryOption || '')
+        : (shippingField.options?.find(o => o !== shippingField.deliveryOption) || '')
+      setFieldValues({ ...fieldValues, [shippingField.id]: label })
+    } else {
+      setLegacyShippingMethod(v)
+    }
+  }
+
   const subtotal    = items.reduce((s, i) => s + i.unitPrice * i.qty, 0)
-  const shippingCost = shippingMethod === 'delivery' && form.shipping?.enabled ? (form.shipping.cost || 0) : 0
+  const shippingCost = shippingMethod !== 'delivery' ? 0
+    : shippingField ? (shippingField.shippingCost || 0)
+    : (form.shipping?.enabled ? (form.shipping.cost || 0) : 0)
   const total       = subtotal + shippingCost
 
   const validate = () => {
@@ -863,6 +930,20 @@ export default function FormPage() {
       setSubmitting(false)
     }
   }, [form, fieldValues, items, shippingMethod, subtotal, shippingCost, total, slipFile, submitting, addSubmission, clearCart])
+
+  if (loadError) return <StatusScreen status="not_found" text={text} subtext={subtext} />
+
+  const sched = form.scheduling
+  const now = Date.now()
+  let formStatus: keyof typeof STATUS_CONTENT | 'open' = 'open'
+  if (sched?.enabled) {
+    if (sched.opensAt && now < new Date(sched.opensAt).getTime()) formStatus = 'not_open'
+    else if (sched.closesAt && now > new Date(sched.closesAt).getTime()) formStatus = 'closed'
+  }
+  if (formStatus === 'open' && form.responseLimit?.enabled && responseCount !== null && responseCount >= form.responseLimit.max) {
+    formStatus = 'full'
+  }
+  if (formStatus !== 'open') return <StatusScreen status={formStatus} text={text} subtext={subtext} />
 
   return (
     <div style={{ minHeight: '100vh', background: bg }}>
@@ -936,6 +1017,14 @@ export default function FormPage() {
           updateQty={updateQty} addItem={addItem} onClose={() => setModalProd(null)} />
       )}
     </div>
+  )
+}
+
+export default function FormPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: '100vh' }} />}>
+      <FormPageContent />
+    </Suspense>
   )
 }
 

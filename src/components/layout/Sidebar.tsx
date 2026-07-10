@@ -1,25 +1,38 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { useAppStore, useAuthStore } from '@/store'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { useAppStore, useAuthStore, useUnsavedGuard } from '@/store'
 
 const navItems = [
   { href: '/dashboard',   label: 'หน้าหลัก',     icon: '⊞' },
   { href: '/editor',      label: 'แก้ไขฟอร์ม',    icon: '✦' },
   { href: '/submissions', label: 'คำสั่งซื้อ',    icon: '◈' },
-  { href: '/form',        label: 'ดูฟอร์ม',       icon: '◉', external: true },
 ]
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
-  const { form, submissions } = useAppStore()
+  const { form, submissions, currentFormSlug } = useAppStore()
   const signOut = useAuthStore((s) => s.signOut)
+  const guardNavigate = useUnsavedGuard((s) => s.guardNavigate)
 
-  const handleSignOut = async () => {
-    await signOut()
-    router.replace('/login')
+  const formId = searchParams.get('f') || ''
+  const qs = formId ? `?f=${formId}` : ''
+
+  // Every in-app navigation goes through guardNavigate so a dirty editor
+  // draft can't be silently abandoned by clicking somewhere else in the app.
+  const go = (e: React.MouseEvent, href: string) => {
+    e.preventDefault()
+    guardNavigate(() => router.push(href))
+  }
+
+  const handleSignOut = () => {
+    guardNavigate(async () => {
+      await signOut()
+      router.replace('/login')
+    })
   }
 
   return (
@@ -52,6 +65,9 @@ export default function Sidebar() {
 
       {/* Form info */}
       <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)' }}>
+        <Link href="/forms" onClick={(e) => go(e, '/forms')} style={{ textDecoration: 'none', fontSize: 11, color: 'var(--purple)', display: 'inline-block', marginBottom: 8 }}>
+          ← ฟอร์มทั้งหมด
+        </Link>
         <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           ฟอร์มปัจจุบัน
         </div>
@@ -71,8 +87,9 @@ export default function Sidebar() {
         {navItems.map((n) => {
           const isActive = pathname === n.href || pathname.startsWith(n.href + '/')
 
+          const target = `${n.href}${qs}`
           return (
-            <Link key={n.href} href={n.href} target={n.external ? '_blank' : undefined} style={{ textDecoration: 'none' }}>
+            <Link key={n.href} href={target} onClick={(e) => go(e, target)} style={{ textDecoration: 'none' }}>
               <div style={{
                 background: isActive ? 'var(--bg-hover)' : 'transparent',
                 border: `1px solid ${isActive ? 'var(--border-active)' : 'transparent'}`,
@@ -92,13 +109,24 @@ export default function Sidebar() {
                     {submissions.length}
                   </span>
                 )}
-                {n.external && (
-                  <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.4 }}>↗</span>
-                )}
               </div>
             </Link>
           )
         })}
+
+        {currentFormSlug && (
+          <Link href={`/form?f=${currentFormSlug}`} target="_blank" style={{ textDecoration: 'none' }}>
+            <div style={{
+              color: 'var(--text-muted)', borderRadius: 9, padding: '10px 13px',
+              display: 'flex', alignItems: 'center', gap: 10, fontSize: 13,
+              marginBottom: 2, cursor: 'pointer',
+            }}>
+              <span style={{ fontSize: 15, opacity: 0.5 }}>◉</span>
+              <span>ดูฟอร์ม</span>
+              <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.4 }}>↗</span>
+            </div>
+          </Link>
+        )}
       </nav>
 
       {/* Footer */}

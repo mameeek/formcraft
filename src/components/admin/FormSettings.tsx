@@ -4,9 +4,25 @@ import type { FormConfig } from '@/types'
 import { Card, Label, Input } from '@/components/ui'
 import { uploadToStorage } from '@/lib/storage'
 
+function toLocalInputValue(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function fromLocalInputValue(v: string): string | null {
+  return v ? new Date(v).toISOString() : null
+}
+
 export default function FormSettings({ form, setForm }: { form: FormConfig; setForm: (f: FormConfig) => void }) {
   const update = (key: keyof FormConfig, val: unknown) => setForm({ ...form, [key]: val })
   const updateShipping = (key: string, val: unknown) => setForm({ ...form, shipping: { ...form.shipping, [key]: val } })
+  const updateScheduling = (key: string, val: unknown) => setForm({
+    ...form, scheduling: { enabled: false, opensAt: null, closesAt: null, ...form.scheduling, [key]: val },
+  })
+  const updateResponseLimit = (key: string, val: unknown) => setForm({
+    ...form, responseLimit: { enabled: false, max: 100, ...form.responseLimit, [key]: val },
+  })
 
 const handleBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0]
@@ -97,6 +113,46 @@ const handleQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           <>
             <Label>ค่าจัดส่ง (฿)</Label>
             <Input type="number" value={String(form.shipping.cost)} onChange={e => updateShipping('cost', Number(e.target.value))} style={{ width: 160 }} />
+          </>
+        )}
+      </Card>
+
+      {/* Scheduling */}
+      <Card>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 16 }}>🗓️ กำหนดเวลาเปิด/ปิดฟอร์ม</h3>
+        <label style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, cursor: 'pointer', fontSize: 13 }}>
+          <input type="checkbox" checked={form.scheduling?.enabled || false} onChange={e => updateScheduling('enabled', e.target.checked)} />
+          กำหนดช่วงเวลาเปิดรับ
+        </label>
+        {form.scheduling?.enabled && (
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div>
+              <Label>เปิดรับตั้งแต่ <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(เว้นว่าง = เปิดทันที)</span></Label>
+              <input type="datetime-local" value={toLocalInputValue(form.scheduling.opensAt)}
+                onChange={e => updateScheduling('opensAt', fromLocalInputValue(e.target.value))}
+                style={{ background: 'var(--bg-deep)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, padding: '9px 12px', outline: 'none' }} />
+            </div>
+            <div>
+              <Label>ปิดรับเมื่อ <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(เว้นว่าง = ไม่ปิด)</span></Label>
+              <input type="datetime-local" value={toLocalInputValue(form.scheduling.closesAt)}
+                onChange={e => updateScheduling('closesAt', fromLocalInputValue(e.target.value))}
+                style={{ background: 'var(--bg-deep)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, padding: '9px 12px', outline: 'none' }} />
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Response limit */}
+      <Card>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 16 }}>🎯 จำกัดจำนวนผู้ตอบ</h3>
+        <label style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 14, cursor: 'pointer', fontSize: 13 }}>
+          <input type="checkbox" checked={form.responseLimit?.enabled || false} onChange={e => updateResponseLimit('enabled', e.target.checked)} />
+          ปิดฟอร์มอัตโนมัติเมื่อมีผู้ตอบครบจำนวน
+        </label>
+        {form.responseLimit?.enabled && (
+          <>
+            <Label>จำนวนสูงสุด (คำสั่งซื้อ)</Label>
+            <Input type="number" value={String(form.responseLimit.max ?? 100)} onChange={e => updateResponseLimit('max', Math.max(1, Number(e.target.value) || 1))} style={{ width: 160 }} />
           </>
         )}
       </Card>

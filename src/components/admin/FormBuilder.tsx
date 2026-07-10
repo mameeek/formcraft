@@ -35,6 +35,9 @@ function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, 
 }) {
   const [expanded, setExpanded] = useState(false)
   const hasOptions = ['dropdown', 'choice', 'checkbox', 'select'].includes(field.type)
+  // Only single-select option fields make sense as a shipping variable (a
+  // binary pickup/delivery choice) — checkbox allows multiple at once.
+  const canBeShippingVariable = field.type === 'dropdown' || field.type === 'choice'
 
   return (
     <div style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 10, marginBottom: 8, overflow: 'hidden' }}>
@@ -120,6 +123,38 @@ function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, 
             </div>
           )}
 
+          {/* Shipping variable — any choice/dropdown field can be flagged as
+              "this controls shipping": pick which option means delivery and
+              what it costs. The field itself still renders normally above;
+              this only adds pricing/logic meaning to its existing options. */}
+          {canBeShippingVariable && (field.options?.length ?? 0) >= 2 && (
+            <div style={{ marginBottom: 10, background: 'var(--bg-deep)', borderRadius: 8, padding: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer', marginBottom: field.isShippingVariable ? 10 : 0 }}>
+                <input type="checkbox" checked={!!field.isShippingVariable}
+                  onChange={e => {
+                    onUpdate('isShippingVariable', e.target.checked)
+                    if (e.target.checked && !field.deliveryOption) onUpdate('deliveryOption', field.options?.[field.options.length - 1] || '')
+                  }} />
+                🚚 ใช้ฟิลด์นี้เป็นตัวแปรวิธีจัดส่ง (Shipping Variable)
+              </label>
+              {field.isShippingVariable && (
+                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 140 }}>
+                    <Label>ตัวเลือกที่หมายถึง &quot;จัดส่ง&quot; (มีค่าใช้จ่าย)</Label>
+                    <Select value={field.deliveryOption || ''} onChange={e => onUpdate('deliveryOption', e.target.value)}>
+                      {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>ค่าจัดส่ง (฿)</Label>
+                    <Input type="number" value={String(field.shippingCost ?? 0)}
+                      onChange={e => onUpdate('shippingCost', Number(e.target.value))} style={{ width: 120 }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Regex validation */}
           <div style={{ marginBottom: 10 }}>
             <Label>Regex Validation <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none' }}>(ไม่บังคับ)</span></Label>
@@ -182,7 +217,7 @@ function FieldCard({ field, allFields, sectionId, onUpdate, onRemove, onMoveUp, 
 }
 
 // ── Section card ─────────────────────────────────────────────────────────────
-function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, onRemoveField, onAddField, onMoveFieldUp, onMoveFieldDown }: {
+function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, onRemoveField, onAddField, onMoveFieldUp, onMoveFieldDown, onMoveSectionUp, onMoveSectionDown, canMoveSectionUp, canMoveSectionDown }: {
   section: FormSection
   allFields: FormField[]
   onUpdate: (key: keyof FormSection, val: unknown) => void
@@ -192,11 +227,23 @@ function SectionCard({ section, allFields, onUpdate, onRemove, onUpdateField, on
   onAddField: (type: FieldType) => void
   onMoveFieldUp: (fid: string) => void
   onMoveFieldDown: (fid: string) => void
+  onMoveSectionUp: () => void
+  onMoveSectionDown: () => void
+  canMoveSectionUp: boolean
+  canMoveSectionDown: boolean
 }) {
   return (
     <Card style={{ marginBottom: 14 }}>
       {/* Section header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        {/* Reorder whole topic */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+          <button onClick={onMoveSectionUp} disabled={!canMoveSectionUp}
+            style={{ background: 'none', border: 'none', cursor: canMoveSectionUp ? 'pointer' : 'default', color: canMoveSectionUp ? 'var(--text-muted)' : 'transparent', fontSize: 11, padding: 0, lineHeight: 1 }}>▲</button>
+          <button onClick={onMoveSectionDown} disabled={!canMoveSectionDown}
+            style={{ background: 'none', border: 'none', cursor: canMoveSectionDown ? 'pointer' : 'default', color: canMoveSectionDown ? 'var(--text-muted)' : 'transparent', fontSize: 11, padding: 0, lineHeight: 1 }}>▼</button>
+        </div>
+
         <input value={section.title} onChange={e => onUpdate('title', e.target.value)}
           style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', fontSize: 16, fontWeight: 700, fontFamily: 'var(--font-display)', outline: 'none' }}
           placeholder="ชื่อหัวข้อ" />
@@ -323,6 +370,15 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
       })
     })
 
+  const moveSection = (sid: string, dir: 1 | -1) => {
+    const sections = [...form.sections]
+    const idx = sections.findIndex(s => s.id === sid)
+    const newIdx = idx + dir
+    if (newIdx < 0 || newIdx >= sections.length) return
+    ;[sections[idx], sections[newIdx]] = [sections[newIdx], sections[idx]]
+    setForm({ ...form, sections })
+  }
+
   return (
     <div>
       <Card style={{ marginBottom: 20 }}>
@@ -334,11 +390,11 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
       </Card>
 
       <div style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 10, padding: '10px 14px', marginBottom: 20, fontSize: 12, color: 'var(--purple)', lineHeight: 1.6 }}>
-        💡 <strong>Logic:</strong> กดลูกศร ▲▼ เพื่อเรียงฟิลด์ · ⚡ เพื่อกำหนดเงื่อนไขแสดง/ซ่อน ·
-        ใช้ <code>__shipping__</code> = <code>delivery</code> เพื่อซ่อนเมื่อรับที่สถานที่
+        💡 <strong>Logic:</strong> กดลูกศร ▲▼ เพื่อเรียงหัวข้อ/ฟิลด์ · ⚡ เพื่อกำหนดเงื่อนไขแสดง/ซ่อน ·
+        ฟิลด์ประเภท Dropdown/Choice ที่มีตัวเลือกตั้งแต่ 2 ขึ้นไป เปิด <strong>🚚 ใช้เป็นตัวแปรวิธีจัดส่ง</strong> ได้ เพื่อกำหนดค่าจัดส่งและใช้เป็นเงื่อนไขที่อื่น (เช่นซ่อน/แสดงหัวข้อที่อยู่)
       </div>
 
-      {form.sections.map(sec => (
+      {form.sections.map((sec, idx) => (
         <SectionCard key={sec.id} section={sec} allFields={allFields}
           onUpdate={(key, val) => updateSection(sec.id, key, val)}
           onRemove={() => removeSection(sec.id)}
@@ -347,6 +403,10 @@ export default function FormBuilder({ form, setForm }: { form: FormConfig; setFo
           onAddField={(type) => addField(sec.id, type)}
           onMoveFieldUp={(fid) => moveField(sec.id, fid, -1)}
           onMoveFieldDown={(fid) => moveField(sec.id, fid, 1)}
+          onMoveSectionUp={() => moveSection(sec.id, -1)}
+          onMoveSectionDown={() => moveSection(sec.id, 1)}
+          canMoveSectionUp={idx > 0}
+          canMoveSectionDown={idx < form.sections.length - 1}
         />
       ))}
 

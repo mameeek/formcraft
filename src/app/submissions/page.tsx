@@ -27,10 +27,11 @@ function SlipLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
-function SubmissionRow({ sub, onConfirm, form }: {
+function SubmissionRow({ sub, onConfirm, form, canConfirm }: {
   sub: Submission
   onConfirm: (id: string, status: PaymentStatus, note?: string) => void
   form: AppStore['form']
+  canConfirm: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const [note, setNote] = useState(sub.paymentNote || '')
@@ -125,16 +126,20 @@ function SubmissionRow({ sub, onConfirm, form }: {
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>ไม่มีสลิป</div>
                     )}
 
-                    {/* Confirm/reject buttons */}
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>หมายเหตุ</div>
-                    <input value={note} onChange={e => setNote(e.target.value)} placeholder="หมายเหตุการยืนยัน" style={{ width: '100%', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 7, color: '#fff', fontSize: 12, padding: '7px 10px', marginBottom: 10, outline: 'none' }} />
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => onConfirm(sub.id, 'confirmed', note)} style={{ flex: 1, background: 'var(--green)', border: 'none', color: '#fff', borderRadius: 8, padding: '8px 0', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>✅ ยืนยัน</button>
-                      <button onClick={() => onConfirm(sub.id, 'rejected', note)} style={{ flex: 1, background: 'transparent', border: '1px solid #f87171', color: '#f87171', borderRadius: 8, padding: '8px 0', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>❌ ปฏิเสธ</button>
-                      {sub.paymentStatus !== 'pending' && (
-                        <button onClick={() => onConfirm(sub.id, 'pending', '')} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontSize: 12 }}>รีเซ็ต</button>
-                      )}
-                    </div>
+                    {/* Confirm/reject buttons — hidden for viewer-only access */}
+                    {canConfirm && (
+                      <>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>หมายเหตุ</div>
+                        <input value={note} onChange={e => setNote(e.target.value)} placeholder="หมายเหตุการยืนยัน" style={{ width: '100%', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 7, color: '#fff', fontSize: 12, padding: '7px 10px', marginBottom: 10, outline: 'none' }} />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button onClick={() => onConfirm(sub.id, 'confirmed', note)} style={{ flex: 1, background: 'var(--green)', border: 'none', color: '#fff', borderRadius: 8, padding: '8px 0', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>✅ ยืนยัน</button>
+                          <button onClick={() => onConfirm(sub.id, 'rejected', note)} style={{ flex: 1, background: 'transparent', border: '1px solid #f87171', color: '#f87171', borderRadius: 8, padding: '8px 0', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>❌ ปฏิเสธ</button>
+                          {sub.paymentStatus !== 'pending' && (
+                            <button onClick={() => onConfirm(sub.id, 'pending', '')} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-muted)', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', fontSize: 12 }}>รีเซ็ต</button>
+                          )}
+                        </div>
+                      </>
+                    )}
 
                     {sub.paymentConfirmedAt && (
                       <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8 }}>
@@ -365,8 +370,9 @@ const th: React.CSSProperties = { padding: '10px 12px', textAlign: 'left', borde
 const td: React.CSSProperties = { padding: '10px 12px', color: 'var(--text-secondary)', verticalAlign: 'top' }
 
 export default function SubmissionsPage() {
-  const { submissions, form, products, updateSubmissionPayment, loading } = useAppStore()
+  const { submissions, form, products, updateSubmissionPayment, loading, role } = useAppStore()
   const [tab, setTab] = useState('table')
+  const canConfirm = role === 'owner' || role === 'editor' || role === 'submissions'
 
   if (loading) return (
     <div style={{ padding: '32px 36px' }} className="animate-fadeUp">
@@ -439,7 +445,7 @@ export default function SubmissionsPage() {
             </thead>
             <tbody>
               {submissions.map(sub => (
-                <SubmissionRow key={sub.id} sub={sub} form={form} onConfirm={updateSubmissionPayment} />
+                <SubmissionRow key={sub.id} sub={sub} form={form} onConfirm={updateSubmissionPayment} canConfirm={canConfirm} />
               ))}
             </tbody>
           </table>
@@ -463,7 +469,7 @@ export default function SubmissionsPage() {
               </thead>
               <tbody>
                 {submissions.filter(s => s.paymentStatus !== 'confirmed').map(sub => (
-                  <SubmissionRow key={sub.id} sub={sub} form={form} onConfirm={updateSubmissionPayment} />
+                  <SubmissionRow key={sub.id} sub={sub} form={form} onConfirm={updateSubmissionPayment} canConfirm={canConfirm} />
                 ))}
                 {submissions.filter(s => s.paymentStatus !== 'confirmed').length === 0 && (
                   <tr><td colSpan={8} style={{ textAlign: 'center', padding: '50px 0', color: 'var(--text-muted)' }}>ยืนยันครบทุกรายการแล้ว ✅</td></tr>

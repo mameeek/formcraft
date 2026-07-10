@@ -4,6 +4,8 @@ export interface ProductVariantOption {
   label: string
   code: string
   image?: string
+  /** Replaces the product's base price when this option is selected (e.g. size XL costs more). Unset = use base price. */
+  priceOverride?: number
 }
 
 export interface ProductVariant {
@@ -55,6 +57,14 @@ export interface FormField {
   condition?: FieldCondition | null
   validationRegex?: string        // custom regex pattern
   validationMessage?: string      // error message when regex fails
+  /** Flags a choice/dropdown field as controlling the shipping variable — its
+   *  selected option drives shippingMethod (pickup/delivery) and shippingCost
+   *  elsewhere in the form, same as any other field but usable for pricing/logic. */
+  isShippingVariable?: boolean
+  /** Which of this field's options counts as "delivery" (adds shippingCost). */
+  deliveryOption?: string
+  /** Cost added when deliveryOption is selected. */
+  shippingCost?: number
 }
 
 export interface FormSection {
@@ -82,6 +92,34 @@ export interface FormConfig {
   paymentNote: string
   promptPayId: string
   sections: FormSection[]
+  scheduling?: {
+    enabled: boolean
+    opensAt?: string | null   // ISO datetime; null/unset = no start restriction
+    closesAt?: string | null  // ISO datetime; null/unset = no end restriction
+  }
+  responseLimit?: {
+    enabled: boolean
+    max: number
+  }
+}
+
+// ─── Multi-form / permissions ──────────────────────────────────────────────────
+export type FormRole = 'owner' | 'editor' | 'submissions' | 'viewer'
+
+export interface FormMeta {
+  id: string
+  slug: string
+  ownerEmail: string
+  createdAt: string
+  title: string   // pulled from this form's form_config.data.title, for display
+  role: FormRole
+}
+
+export interface FormPermission {
+  formId: string
+  email: string
+  role: Exclude<FormRole, 'owner'>
+  grantedAt: string
 }
 
 // ─── Cart & Order Types ────────────────────────────────────────────────────────

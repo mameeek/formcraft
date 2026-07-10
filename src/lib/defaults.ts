@@ -1,4 +1,5 @@
 import type { Product, FormConfig } from '@/types'
+import { uid } from '@/lib/utils'
 
 export const defaultProducts: Product[] = [
   {
@@ -127,4 +128,48 @@ export const defaultForm: FormConfig = {
       ],
     },
   ],
+}
+
+/** A fresh, empty form (no demo products) for when an admin creates a new form. */
+export function blankFormConfig(title: string): FormConfig {
+  return {
+    id: uid(),
+    title,
+    subtitle: '',
+    coverColor: '#0d0d1a',
+    accentColor: '#e94560',
+    theme: 'dark',
+    logoEmoji: '📋',
+    bannerImage: '',
+    qrCodeImage: '',
+    published: true,
+    shipping: { enabled: false, cost: 0 },
+    paymentNote: '',
+    promptPayId: '',
+    sections: [
+      {
+        id: uid(), title: 'ข้อมูลผู้สั่งซื้อ',
+        fields: [
+          { id: uid(), type: 'dropdown', label: 'คำนำหน้า',   placeholder: '', required: true,  width: 'half', options: ['เด็กชาย', 'เด็กหญิง', 'นาย', 'นาง', 'นางสาว'] },
+          { id: uid(), type: 'text',     label: 'ชื่อ',       placeholder: 'ชื่อจริง',        required: true,  width: 'half' },
+          { id: uid(), type: 'text',     label: 'นามสกุล',    placeholder: 'นามสกุล',         required: true,  width: 'half' },
+          { id: uid(), type: 'tel',      label: 'เบอร์โทร',   placeholder: '08X-XXX-XXXX',    required: true,  width: 'half' },
+          { id: uid(), type: 'email',    label: 'อีเมล',      placeholder: 'email@example.com', required: false, width: 'half' },
+        ],
+      },
+      {
+        // Condition lives on the section, not each field, so the whole
+        // address block shows/hides together when shipping is toggled.
+        id: uid(), title: 'ที่อยู่จัดส่ง',
+        condition: { fieldId: '__shipping__', operator: 'equals', value: 'delivery' },
+        fields: [
+          { id: uid(), type: 'text', label: 'ที่อยู่',         placeholder: 'บ้านเลขที่ ถนน',   required: false, width: 'full' },
+          { id: uid(), type: 'text', label: 'ตำบล',           placeholder: 'ตำบล',            required: false, width: 'half' },
+          { id: uid(), type: 'text', label: 'อำเภอ',          placeholder: 'อำเภอ',           required: false, width: 'half' },
+          { id: uid(), type: 'text', label: 'จังหวัด',         placeholder: 'จังหวัด',          required: false, width: 'half' },
+          { id: uid(), type: 'text', label: 'รหัสไปรษณีย์',    placeholder: 'รหัสไปรษณีย์',      required: false, width: 'half' },
+        ],
+      },
+    ],
+  }
 }

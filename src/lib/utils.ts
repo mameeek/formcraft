@@ -4,6 +4,17 @@ export function uid(): string {
   return Math.random().toString(36).slice(2, 9)
 }
 
+/** Turn a title into a URL-friendly slug (lowercase, ascii/digits/dash only — falls
+ *  back to a random id when the title has no ascii characters, e.g. Thai-only titles). */
+export function slugify(title: string): string {
+  const s = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return s || uid()
+}
+
 export function fmt(n: number): string {
   return n.toLocaleString('th-TH')
 }
@@ -28,6 +39,30 @@ export function getProductVariants(prod: Product, allProducts: Product[]): Produ
     return all
   }
   return []
+}
+
+/**
+ * Effective unit price for a product given the currently selected variant
+ * options — e.g. a shirt normally costs 10, but size XL is selected and that
+ * option has priceOverride=30, so this returns 30. Checks variants in order;
+ * if more than one selected option happens to carry an override, the last
+ * one checked wins. Selections not tied to any priceOverride don't change
+ * anything, so this is safe to call even for products with no custom pricing.
+ */
+export function getEffectiveUnitPrice(
+  prod: Product,
+  allProducts: Product[],
+  selections: Record<string, string>
+): number {
+  let price = prod.price
+  const variants = getProductVariants(prod, allProducts)
+  for (const v of variants) {
+    const selectedLabel = selections[v.id]
+    if (!selectedLabel) continue
+    const opt = v.options.find((o) => o.label === selectedLabel)
+    if (opt?.priceOverride != null) price = opt.priceOverride
+  }
+  return price
 }
 
 /** Build compact CSV product code for a cart item */

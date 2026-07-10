@@ -34,11 +34,12 @@ function ProductRow({ prod, onEdit, onDelete, active }: { prod: Product; onEdit:
   )
 }
 
-function VariantOptionRow({ opt, onUpdate, onRemove, productImages }: {
+function VariantOptionRow({ opt, onUpdate, onRemove, productImages, basePrice }: {
   opt: ProductVariantOption
-  onUpdate: (key: keyof ProductVariantOption, val: string) => void
+  onUpdate: (key: keyof ProductVariantOption, val: string | number | undefined) => void
   onRemove: () => void
   productImages: string[]
+  basePrice: number
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
@@ -53,6 +54,9 @@ function VariantOptionRow({ opt, onUpdate, onRemove, productImages }: {
         </button>
         <Input value={opt.label} onChange={e => onUpdate('label', e.target.value)} placeholder="ชื่อตัวเลือก" style={{ flex: 2 }} />
         <Input value={opt.code} onChange={e => onUpdate('code', e.target.value)} placeholder="code" style={{ flex: 1, fontFamily: 'monospace', fontSize: 12 }} />
+        <Input type="number" value={opt.priceOverride != null ? String(opt.priceOverride) : ''}
+          onChange={e => onUpdate('priceOverride', e.target.value === '' ? undefined : Number(e.target.value))}
+          placeholder={`฿${basePrice}`} style={{ width: 78, fontSize: 12, flexShrink: 0 }} />
         {opt.image && (
           <button onClick={() => { onUpdate('image', ''); setPickerOpen(false) }} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12, padding: 2, flexShrink: 0 }} title="ลบรูป">🗑️</button>
         )}
@@ -95,7 +99,7 @@ function ProductEditorPanel({ initial, singleProducts, onSave, onCancel }: {
   const addOption = (vid: string) => setP({
     ...p, variants: p.variants.map(v => v.id === vid ? { ...v, options: [...v.options, { id: uid(), label: '', code: '' }] } : v)
   })
-  const updateOption = (vid: string, oid: string, key: keyof ProductVariantOption, val: string) =>
+  const updateOption = (vid: string, oid: string, key: keyof ProductVariantOption, val: string | number | undefined) =>
     setP({ ...p, variants: p.variants.map(v => v.id === vid ? { ...v, options: v.options.map(o => o.id === oid ? { ...o, [key]: val } : o) } : v) })
   const removeOption = (vid: string, oid: string) =>
     setP({ ...p, variants: p.variants.map(v => v.id === vid ? { ...v, options: v.options.filter(o => o.id !== oid) } : v) })
@@ -172,12 +176,14 @@ function ProductEditorPanel({ initial, singleProducts, onSave, onCancel }: {
                 <IconBtn onClick={() => removeVariant(v.id)}>✕</IconBtn>
               </div>
 
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, fontWeight: 700 }}>ตัวเลือก (ชื่อ + code)</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6, fontWeight: 700 }}>
+                ตัวเลือก (ชื่อ + code + ราคาพิเศษถ้ามี)
+              </div>
               {v.options.map(opt => (
                 <VariantOptionRow key={opt.id} opt={opt}
                   onUpdate={(key, val) => updateOption(v.id, opt.id, key, val)}
                   onRemove={() => removeOption(v.id, opt.id)}
-                  productImages={p.images || []} />
+                  productImages={p.images || []} basePrice={p.price} />
               ))}
               <button onClick={() => addOption(v.id)} style={{ fontSize: 12, color: 'var(--purple)', background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 0' }}>+ เพิ่มตัวเลือก</button>
 

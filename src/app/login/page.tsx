@@ -7,20 +7,20 @@ import { Btn, Input, Label, Card } from '@/components/ui'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { session, initialized, init, signInWithPassword, signingIn, error } = useAuthStore()
+  const { session, initialized, init, signInWithPassword, signInWithGoogle, signingIn, error } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
   useEffect(() => { init() }, [init])
 
   useEffect(() => {
-    if (initialized && session) router.replace('/dashboard')
+    if (initialized && session) router.replace('/forms')
   }, [initialized, session, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const ok = await signInWithPassword(email, password)
-    if (ok) router.replace('/dashboard')
+    if (ok) router.replace('/forms')
   }
 
   return (
@@ -49,6 +49,16 @@ export default function LoginPage() {
             {signingIn ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
           </Btn>
         </form>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0' }}>
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>หรือ</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        </div>
+
+        <Btn onClick={signInWithGoogle} variant="ghost" fullWidth type="button">
+          🔎 เข้าสู่ระบบด้วย Google
+        </Btn>
       </Card>
     </div>
   )

@@ -3,12 +3,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Session } from '@supabase/supabase-js'
-import type { Product, FormConfig, Submission, CartItem, PaymentStatus } from '@/types'
-import { defaultProducts, defaultForm } from '@/lib/defaults'
+import type { Product, FormConfig, Submission, CartItem, PaymentStatus, FormMeta, FormPermission, FormRole } from '@/types'
+import { defaultProducts, defaultForm, blankFormConfig } from '@/lib/defaults'
 import { uid } from '@/lib/utils'
 import { supabase } from '@/lib/db'
 
-// ─── App Store ─────────────────────────────────────────────────────────────────
+// ─── App Store (current form's data) ───────────────────────────────────────────
 interface AppStore {
   products: Product[]
   form: FormConfig
@@ -17,11 +17,18 @@ interface AppStore {
   submissionsLoaded: boolean
   error: string | null
   dbConnected: boolean
+  /** The form all reads/writes below are scoped to. Set by loadPublicData/loadAdminData. */
+  currentFormId: string | null
+  /** currentFormId's public slug (for building /form/?f=<slug> links) — admin side only. */
+  currentFormSlug: string | null
+  /** Caller's role on currentFormId, resolved by AdminShell. null until resolved / no access. */
+  role: FormRole | null
+  setRole: (role: FormRole | null) => void
 
-  /** Public data only (products + form config) — safe for the unauthenticated form page. */
-  loadPublicData: () => Promise<void>
-  /** Public data + submissions — only call this once an admin session is confirmed. */
-  loadAdminData: () => Promise<void>
+  /** Public data only (products + form config) for one form, resolved by slug — safe for the unauthenticated form page. */
+  loadPublicData: (slug: string) => Promise<void>
+  /** Public data + submissions for one form, by id — only call once an admin session + role is confirmed. */
+  loadAdminData: (formId: string) => Promise<void>
   setProducts: (p: Product[]) => void
   /** Returns true on success, false if the write failed (store.error is set too). */
   saveProducts: (p: Product[]) => Promise<boolean>
@@ -67,17 +74,28 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   submissionsLoaded: false,
   error: null,
   dbConnected: false,
+  currentFormId: null,
+  currentFormSlug: null,
+  role: null,
+  setRole: (role) => set({ role }),
 
-  loadPublicData: async () => {
+  loadPublicData: async (slug) => {
     if (get().loading) return
     set({ loading: true, error: null })
     try {
+      const { data: formId, error: idErr } = await supabase.rpc('form_id_for_slug', { p_slug: slug })
+      if (idErr) throw idErr
+      if (!formId) {
+        set({ loading: false, error: 'ไม่พบฟอร์มนี้', currentFormId: null })
+        return
+      }
+
       const [
         { data: prodRows, error: prodErr },
         { data: formRow,  error: formErr },
       ] = await Promise.all([
-        supabase.from('products').select('data'),
-        supabase.from('form_config').select('data').eq('id', 'main').maybeSingle(),
+        supabase.from('products').select('data').eq('form_id', formId),
+        supabase.from('form_config').select('data').eq('id', formId).maybeSingle(),
       ])
 
       if (prodErr) console.error('❌ products:', prodErr)
@@ -87,10 +105,11 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       const form     = formRow  ? (formRow  as any).data               : null
 
       set({
-        products:    products && products.length > 0 ? products : defaultProducts,
-        form:        form ?? defaultForm,
-        loading:     false,
-        dbConnected: true,
+        products:      products ?? [],
+        form:          form ?? defaultForm,
+        loading:       false,
+        dbConnected:   true,
+        currentFormId: formId,
       })
     } catch (e) {
       console.error('❌ loadPublicData failed:', e)
@@ -98,7 +117,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
 
-  loadAdminData: async () => {
+  loadAdminData: async (formId) => {
     if (get().loading) return
     set({ loading: true, error: null })
     try {
@@ -106,27 +125,32 @@ export const useAppStore = create<AppStore>()((set, get) => ({
         { data: prodRows, error: prodErr },
         { data: formRow,  error: formErr },
         { data: subRows,  error: subErr  },
+        { data: formMeta, error: metaErr },
       ] = await Promise.all([
-        supabase.from('products').select('data'),
-        supabase.from('form_config').select('data').eq('id', 'main').maybeSingle(),
-        supabase.from('submissions').select(SUBMISSION_LIST_COLUMNS).order('submitted_at', { ascending: false }),
+        supabase.from('products').select('data').eq('form_id', formId),
+        supabase.from('form_config').select('data').eq('id', formId).maybeSingle(),
+        supabase.from('submissions').select(SUBMISSION_LIST_COLUMNS).eq('form_id', formId).order('submitted_at', { ascending: false }),
+        supabase.from('forms').select('slug').eq('id', formId).maybeSingle(),
       ])
 
       if (prodErr) console.error('❌ products:', prodErr)
       if (formErr) console.error('❌ form:', formErr)
       if (subErr)  console.error('❌ submissions:', subErr)
+      if (metaErr) console.error('❌ form meta:', metaErr)
 
       const products    = prodRows ? (prodRows as any[]).map(r => r.data) : null
       const form        = formRow  ? (formRow  as any).data               : null
       const submissions = subRows  ? (subRows  as any[]).map(mapRow)      : null
 
       set({
-        products:          products && products.length > 0 ? products : defaultProducts,
+        products:          products ?? [],
         form:              form ?? defaultForm,
         submissions:       submissions ?? [],
         loading:           false,
         submissionsLoaded: true,
         dbConnected:       true,
+        currentFormId:     formId,
+        currentFormSlug:   (formMeta as any)?.slug ?? null,
       })
     } catch (e) {
       console.error('❌ loadAdminData failed:', e)
@@ -138,11 +162,13 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
   saveProducts: async (products) => {
     set({ products })
+    const formId = get().currentFormId
+    if (!formId) { set({ error: 'ไม่พบฟอร์มปัจจุบัน' }); return false }
     try {
-      await supabase.from('products').delete().neq('id', '__none__')
+      await supabase.from('products').delete().eq('form_id', formId)
       if (products.length > 0) {
         const { error } = await supabase.from('products').insert(
-          products.map(p => ({ id: p.id, data: p })) as any
+          products.map(p => ({ id: p.id, form_id: formId, data: p })) as any
         )
         if (error) throw error
       }
@@ -158,10 +184,12 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
   saveForm: async (form) => {
     set({ form })
+    const formId = get().currentFormId
+    if (!formId) { set({ error: 'ไม่พบฟอร์มปัจจุบัน' }); return false }
     try {
       const { error } = await supabase
         .from('form_config')
-        .upsert({ id: 'main', data: form, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+        .upsert({ id: formId, data: form, updated_at: new Date().toISOString() }, { onConflict: 'id' })
       if (error) throw error
       return true
     } catch (e) {
@@ -172,10 +200,13 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   addSubmission: async (sub) => {
+    const formId = get().currentFormId
+    if (!formId) throw new Error('ไม่พบฟอร์มปัจจุบัน')
     const id = uid()
     const now = new Date().toISOString()
     const { error } = await supabase.from('submissions').insert({
       id,
+      form_id:         formId,
       customer_name:   sub.customerName  || '',
       customer_phone:  sub.customerPhone || '',
       customer_email:  sub.customerEmail || '',
@@ -237,7 +268,130 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
   },
 
-  resetAll: () => set({ products: defaultProducts, form: defaultForm, submissions: [] }),
+  resetAll: () => set({ products: defaultProducts, form: defaultForm, submissions: [], currentFormId: null, currentFormSlug: null, role: null }),
+}))
+
+// ─── Forms Store (the forms list, creation, and per-form permissions) ─────────
+interface FormsStore {
+  forms: FormMeta[]
+  loading: boolean
+  error: string | null
+  canCreateForms: boolean
+
+  listMyForms: () => Promise<void>
+  checkCanCreateForms: () => Promise<void>
+  createForm: (title: string, slug: string) => Promise<string | null>
+  listFormPermissions: (formId: string) => Promise<FormPermission[]>
+  grantFormPermission: (formId: string, email: string, role: Exclude<FormRole, 'owner'>) => Promise<boolean>
+  revokeFormPermission: (formId: string, email: string) => Promise<boolean>
+  /** null = no access at all (hide/redirect); otherwise the caller's role for that form. */
+  resolveFormRole: (formId: string) => Promise<FormRole | null>
+}
+
+function myEmail(): string {
+  return (useAuthStore.getState().session?.user?.email || '').toLowerCase()
+}
+
+export const useFormsStore = create<FormsStore>()((set) => ({
+  forms: [],
+  loading: false,
+  error: null,
+  canCreateForms: false,
+
+  listMyForms: async () => {
+    set({ loading: true, error: null })
+    try {
+      const email = myEmail()
+      const { data: formRows, error } = await supabase.from('forms').select('id, slug, owner_email, created_at')
+      if (error) throw error
+
+      const ids = (formRows || []).map((f: any) => f.id)
+      const [{ data: configRows }, { data: permRows }] = await Promise.all([
+        ids.length ? supabase.from('form_config').select('id, data').in('id', ids) : Promise.resolve({ data: [] as any[] }),
+        supabase.from('form_permissions').select('form_id, role').eq('email', email),
+      ])
+
+      const titleByFormId = new Map((configRows || []).map((c: any) => [c.id, c.data?.title || '']))
+      const roleByFormId  = new Map((permRows   || []).map((p: any) => [p.form_id, p.role]))
+
+      const forms: FormMeta[] = (formRows || []).map((f: any) => ({
+        id: f.id,
+        slug: f.slug,
+        ownerEmail: f.owner_email,
+        createdAt: f.created_at,
+        title: titleByFormId.get(f.id) || f.slug,
+        role: f.owner_email === email ? 'owner' : (roleByFormId.get(f.id) || 'viewer'),
+      }))
+
+      set({ forms, loading: false })
+    } catch (e) {
+      console.error('listMyForms:', e)
+      set({ loading: false, error: 'โหลดรายการฟอร์มไม่สำเร็จ' })
+    }
+  },
+
+  checkCanCreateForms: async () => {
+    const email = myEmail()
+    if (!email) { set({ canCreateForms: false }); return }
+    const { data, error } = await supabase.from('platform_admins').select('email').eq('email', email).maybeSingle()
+    set({ canCreateForms: !error && !!data })
+  },
+
+  createForm: async (title, slug) => {
+    const email = myEmail()
+    if (!email) return null
+    const id = uid()
+    try {
+      const { error: formErr } = await supabase.from('forms').insert({ id, slug, owner_email: email } as any)
+      if (formErr) throw formErr
+      const config = { ...blankFormConfig(title), id }
+      const { error: cfgErr } = await supabase.from('form_config').insert({ id, data: config } as any)
+      if (cfgErr) throw cfgErr
+      return id
+    } catch (e) {
+      console.error('createForm:', e)
+      set({ error: 'สร้างฟอร์มไม่สำเร็จ (slug อาจซ้ำ)' })
+      return null
+    }
+  },
+
+  listFormPermissions: async (formId) => {
+    const { data, error } = await supabase
+      .from('form_permissions')
+      .select('form_id, email, role, granted_at')
+      .eq('form_id', formId)
+      .order('granted_at', { ascending: true })
+    if (error) { console.error('listFormPermissions:', error); return [] }
+    return (data || []).map((r: any) => ({ formId: r.form_id, email: r.email, role: r.role, grantedAt: r.granted_at }))
+  },
+
+  grantFormPermission: async (formId, email, role) => {
+    const { error } = await supabase
+      .from('form_permissions')
+      .upsert({ form_id: formId, email: email.trim().toLowerCase(), role } as any, { onConflict: 'form_id,email' })
+    if (error) { console.error('grantFormPermission:', error); return false }
+    return true
+  },
+
+  revokeFormPermission: async (formId, email) => {
+    const { error } = await supabase
+      .from('form_permissions')
+      .delete()
+      .eq('form_id', formId)
+      .eq('email', email.trim().toLowerCase())
+    if (error) { console.error('revokeFormPermission:', error); return false }
+    return true
+  },
+
+  resolveFormRole: async (formId) => {
+    const email = myEmail()
+    if (!email) return null
+    const { data: formRow, error } = await supabase.from('forms').select('owner_email').eq('id', formId).maybeSingle()
+    if (error || !formRow) return null
+    if ((formRow as any).owner_email === email) return 'owner'
+    const { data: permRow } = await supabase.from('form_permissions').select('role').eq('form_id', formId).eq('email', email).maybeSingle()
+    return (permRow as any)?.role ?? null
+  },
 }))
 
 // ─── Auth Store (Supabase Auth — gates the admin dashboard) ────────────────────
@@ -248,6 +402,7 @@ interface AuthStore {
   signingIn: boolean
   init: () => void
   signInWithPassword: (email: string, password: string) => Promise<boolean>
+  signInWithGoogle: () => Promise<void>
   signOut: () => Promise<void>
 }
 
@@ -275,13 +430,69 @@ export const useAuthStore = create<AuthStore>()((set, get) => ({
     return true
   },
 
+  signInWithGoogle: async () => {
+    set({ error: null })
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + window.location.pathname },
+    })
+    if (error) set({ error: 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ' })
+  },
+
   signOut: async () => {
     await supabase.auth.signOut()
     set({ session: null })
   },
 }))
 
-// ─── Cart Store (localStorage) ─────────────────────────────────────────────────
+// ─── Unsaved Changes Guard (Discord-style "you have unsaved changes") ─────────
+// The editor registers its save/discard handlers here while it has a dirty
+// draft. Anything that navigates away in-app (Sidebar links, etc.) should call
+// guardNavigate() instead of navigating directly — if there's a dirty draft it
+// stashes the navigation and shows a Save/Discard/Cancel modal instead of just
+// leaving; browser tab close/refresh is handled separately via beforeunload.
+interface UnsavedGuardStore {
+  dirty: boolean
+  pendingAction: (() => void) | null
+  saveHandler: (() => Promise<boolean>) | null
+  discardHandler: (() => void) | null
+  setDirty: (dirty: boolean) => void
+  registerHandlers: (save: () => Promise<boolean>, discard: () => void) => void
+  clearHandlers: () => void
+  /** Call instead of navigating directly. Runs `action` now if clean, otherwise defers it. */
+  guardNavigate: (action: () => void) => void
+  resolvePending: (choice: 'save' | 'discard' | 'cancel') => Promise<void>
+}
+
+export const useUnsavedGuard = create<UnsavedGuardStore>()((set, get) => ({
+  dirty: false,
+  pendingAction: null,
+  saveHandler: null,
+  discardHandler: null,
+
+  setDirty: (dirty) => set({ dirty }),
+  registerHandlers: (save, discard) => set({ saveHandler: save, discardHandler: discard }),
+  clearHandlers: () => set({ saveHandler: null, discardHandler: null, dirty: false, pendingAction: null }),
+
+  guardNavigate: (action) => {
+    if (get().dirty) set({ pendingAction: action })
+    else action()
+  },
+
+  resolvePending: async (choice) => {
+    const { pendingAction, saveHandler, discardHandler } = get()
+    if (choice === 'cancel') { set({ pendingAction: null }); return }
+    if (choice === 'save') {
+      const ok = saveHandler ? await saveHandler() : false
+      if (!ok) return // save failed — stay put, keep the pending nav so they can retry or cancel
+    }
+    if (choice === 'discard') discardHandler?.()
+    set({ dirty: false, pendingAction: null })
+    pendingAction?.()
+  },
+}))
+
+// ─── Cart Store (localStorage, one per form so carts never leak between forms) ─
 interface CartStore {
   items: CartItem[]
   addItem: (item: Omit<CartItem, 'cartId'>) => void
@@ -290,20 +501,34 @@ interface CartStore {
   clearCart: () => void
 }
 
-export const useCartStore = create<CartStore>()(
-  persist(
-    (set) => ({
-      items: [],
-      addItem:    (item)         => set((s) => ({ items: [...s.items, { ...item, cartId: uid() }] })),
-      updateQty:  (cartId, delta) => set((s) => ({
-        items: s.items.map((i) => i.cartId === cartId ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter((i) => i.qty > 0),
-      })),
-      removeItem: (cartId)       => set((s) => ({ items: s.items.filter((i) => i.cartId !== cartId) })),
-      clearCart:  ()             => set({ items: [] }),
-    }),
-    { name: 'formcraft-cart' }
+function createCartStore(formKey: string) {
+  return create<CartStore>()(
+    persist(
+      (set) => ({
+        items: [],
+        addItem:    (item)          => set((s) => ({ items: [...s.items, { ...item, cartId: uid() }] })),
+        updateQty:  (cartId, delta) => set((s) => ({
+          items: s.items.map((i) => i.cartId === cartId ? { ...i, qty: Math.max(0, i.qty + delta) } : i).filter((i) => i.qty > 0),
+        })),
+        removeItem: (cartId)        => set((s) => ({ items: s.items.filter((i) => i.cartId !== cartId) })),
+        clearCart:  ()               => set({ items: [] }),
+      }),
+      { name: `formcraft-cart-${formKey}` }
+    )
   )
-)
+}
+
+const cartStoreCache = new Map<string, ReturnType<typeof createCartStore>>()
+
+/** Pass the form's slug (or id) so each form gets its own isolated cart. */
+export function useCartStore(formKey: string) {
+  let store = cartStoreCache.get(formKey)
+  if (!store) {
+    store = createCartStore(formKey)
+    cartStoreCache.set(formKey, store)
+  }
+  return store()
+}
 
 // ─── Exported types ────────────────────────────────────────────────────────────
 export type { AppStore }

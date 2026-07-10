@@ -1,11 +1,15 @@
 'use client'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useAppStore } from '@/store'
 import { StatCard, Card, Btn } from '@/components/ui'
 import { fmt } from '@/lib/utils'
 
 export default function DashboardPage() {
-  const { form, submissions, products } = useAppStore()
+  const { form, submissions, products, currentFormSlug } = useAppStore()
+  const searchParams = useSearchParams()
+  const formId = searchParams.get('f') || ''
+  const qs = `?f=${formId}`
 
   const totalRevenue = submissions.reduce((s, sub) => s + (sub.totalAmount || 0), 0)
   const todayStr = new Date().toISOString().slice(0, 10)
@@ -35,8 +39,10 @@ export default function DashboardPage() {
           <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>{form.title}</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <Link href="/editor"><Btn variant="ghost">✏️ แก้ไข</Btn></Link>
-          <Link href="/form" target="_blank"><Btn variant="primary">👁️ ดูฟอร์ม →</Btn></Link>
+          <Link href={`/editor${qs}`}><Btn variant="ghost">✏️ แก้ไข</Btn></Link>
+          {currentFormSlug && (
+            <Link href={`/form?f=${currentFormSlug}`} target="_blank"><Btn variant="primary">👁️ ดูฟอร์ม →</Btn></Link>
+          )}
         </div>
       </div>
 
@@ -66,7 +72,7 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>คำสั่งซื้อล่าสุด</h3>
             {submissions.length > 0 && (
-              <Link href="/submissions"><Btn size="sm" variant="ghost">ดูทั้งหมด →</Btn></Link>
+              <Link href={`/submissions${qs}`}><Btn size="sm" variant="ghost">ดูทั้งหมด →</Btn></Link>
             )}
           </div>
           {recentSubs.length === 0 ? (
@@ -87,8 +93,8 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <div style={{ marginTop: 24, display: 'flex', gap: 12 }}>
-        <Link href="/editor?tab=products"><Btn variant="secondary">🛍️ จัดการสินค้า</Btn></Link>
-        <Link href="/submissions"><Btn variant="secondary">📥 ดู & Export คำสั่งซื้อ</Btn></Link>
+        <Link href={`/editor${qs}&tab=products`}><Btn variant="secondary">🛍️ จัดการสินค้า</Btn></Link>
+        <Link href={`/submissions${qs}`}><Btn variant="secondary">📥 ดู & Export คำสั่งซื้อ</Btn></Link>
       </div>
     </div>
   )
