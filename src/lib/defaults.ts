@@ -70,15 +70,15 @@ export const defaultProducts: Product[] = [
     id: 's1', type: 'set', name: 'เซ็ต A – Starter', code: 'set_a',
     price: 89, originalPrice: 104, images: [], description: 'พวงกุญแจ + สติ๊กเกอร์', tags: ['เซ็ต'],
     aspectRatio: 'square', variants: [],
-    setItems: [{ productId: 'p1', label: 'พวงกุญแจ' }, { productId: 'p4', label: 'สติ๊กเกอร์' }],
+    setItems: [{ id: 'si1', productId: 'p1', label: 'พวงกุญแจ' }, { id: 'si2', productId: 'p4', label: 'สติ๊กเกอร์' }],
   },
   {
     id: 's2', type: 'set', name: 'เซ็ต B – Collector', code: 'set_b',
     price: 239, originalPrice: 302, images: [], description: 'พวงกุญแจ + สติ๊กเกอร์ + โปสการ์ด + กระเป๋าผ้า', tags: ['เซ็ต'],
     aspectRatio: 'square', variants: [],
     setItems: [
-      { productId: 'p1', label: 'พวงกุญแจ' }, { productId: 'p4', label: 'สติ๊กเกอร์' },
-      { productId: 'p2', label: 'โปสการ์ด' }, { productId: 'p3', label: 'กระเป๋าผ้า' },
+      { id: 'si3', productId: 'p1', label: 'พวงกุญแจ' }, { id: 'si4', productId: 'p4', label: 'สติ๊กเกอร์' },
+      { id: 'si5', productId: 'p2', label: 'โปสการ์ด' }, { id: 'si6', productId: 'p3', label: 'กระเป๋าผ้า' },
     ],
   },
   {
@@ -86,9 +86,9 @@ export const defaultProducts: Product[] = [
     price: 449, originalPrice: 581, images: [], description: 'ครบทุกอย่างรวมเสื้อยืด', tags: ['เซ็ต'],
     aspectRatio: 'square', variants: [],
     setItems: [
-      { productId: 'p1', label: 'พวงกุญแจ' }, { productId: 'p4', label: 'สติ๊กเกอร์' },
-      { productId: 'p2', label: 'โปสการ์ด' }, { productId: 'p3', label: 'กระเป๋าผ้า' },
-      { productId: 'p5', label: 'เสื้อยืด' },
+      { id: 'si7', productId: 'p1', label: 'พวงกุญแจ' }, { id: 'si8', productId: 'p4', label: 'สติ๊กเกอร์' },
+      { id: 'si9', productId: 'p2', label: 'โปสการ์ด' }, { id: 'si10', productId: 'p3', label: 'กระเป๋าผ้า' },
+      { id: 'si11', productId: 'p5', label: 'เสื้อยืด' },
     ],
   },
 ]

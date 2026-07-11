@@ -89,7 +89,22 @@ function VariantOptionRow({ opt, onUpdate, onRemove, productImages, basePrice }:
 function ProductEditorPanel({ initial, singleProducts, onSave, onCancel }: {
   initial: Product; singleProducts: Product[]; onSave: (p: Product) => void; onCancel: () => void
 }) {
-  const [p, setP] = useState<Product>({ ...initial })
+  // Backfill `id` on set items saved before it existed, and drop a
+  // leftover flat `priceOverride` on any item that isn't fully fixed to one
+  // option per variant anymore — a flat price only means anything once every
+  // dimension is locked, so a stale one left over from before a dimension was
+  // unfixed would otherwise show up as a wrong pre-selection default price.
+  const [p, setP] = useState<Product>({
+    ...initial,
+    setItems: initial.setItems?.map(si => {
+      const withId = si.id ? si : { ...si, id: uid() }
+      const sp = singleProducts.find(pr => pr.id === withId.productId)
+      const allFixed = (sp?.variants || []).length > 0 && sp!.variants.every(v => withId.fixedOptions?.[v.id])
+      const noVariants = !sp?.variants?.length
+      if (withId.priceOverride != null && !allFixed && !noVariants) return { ...withId, priceOverride: undefined }
+      return withId
+    }),
+  })
 
   const addVariant = () => setP({ ...p, variants: [...p.variants, { id: uid(), name: 'ตัวเลือกใหม่', required: true, options: [], expandAsProducts: false }] })
   const removeVariant = (vid: string) => setP({ ...p, variants: p.variants.filter(v => v.id !== vid) })
@@ -107,9 +122,22 @@ function ProductEditorPanel({ initial, singleProducts, onSave, onCancel }: {
   const addSetItem = (productId: string) => {
     const prod = singleProducts.find(pr => pr.id === productId)
     if (!prod) return
-    setP({ ...p, setItems: [...(p.setItems || []), { productId, label: prod.name }] })
+    // No de-dup here on purpose — the same product can be added more than
+    // once (e.g. a shirt fixed at size S, another instance fixed at XL),
+    // each instance getting its own `id` so it can be configured and priced
+    // independently.
+    setP({ ...p, setItems: [...(p.setItems || []), { id: uid(), productId, label: prod.name }] })
   }
-  const removeSetItem = (productId: string) => setP({ ...p, setItems: (p.setItems || []).filter(i => i.productId !== productId) })
+  const removeSetItem = (itemId: string) => setP({ ...p, setItems: (p.setItems || []).filter(i => i.id !== itemId) })
+  const updateSetItem = (itemId: string, patch: Partial<SetItem>) =>
+    setP({ ...p, setItems: (p.setItems || []).map(i => i.id === itemId ? { ...i, ...patch } : i) })
+
+  // Suggested set total — sum of each instance's own price (falling back to
+  // the referenced product's base price when the admin hasn't set one).
+  const setItemsSum = (p.setItems || []).reduce((sum, item) => {
+    const sp = singleProducts.find(pr => pr.id === item.productId)
+    return sum + (item.priceOverride ?? sp?.price ?? 0)
+  }, 0)
 
   return (
     <div style={{ background: 'var(--bg-deep)', border: '1px solid var(--border-active)', borderRadius: 14, padding: 22, position: 'sticky', top: 20, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto' }}>
@@ -205,22 +233,93 @@ function ProductEditorPanel({ initial, singleProducts, onSave, onCancel }: {
       {/* Set items */}
       {p.type === 'set' && (
         <div>
-          <Label>สินค้าในเซ็ต</Label>
+          <Label>สินค้าในเซ็ต <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(เพิ่มสินค้าเดิมซ้ำได้ เช่น เสื้อไซส์ S กับ XL คนละราคา)</span></Label>
           {(p.setItems || []).map(item => {
             const prod = singleProducts.find(pr => pr.id === item.productId)
+            // Once every variant dimension is locked to one option, this
+            // instance has a single fixed configuration — a flat price makes
+            // sense. If any dimension is still left to the customer, price
+            // has to vary per option instead (the table below each unlocked
+            // variant), so the flat field would be misleading.
+            const allFixed = (prod?.variants || []).length > 0 && (prod!.variants).every(v => item.fixedOptions?.[v.id])
+            const noVariants = !prod?.variants?.length
             return (
-              <div key={item.productId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', marginBottom: 7, fontSize: 13 }}>
-                <span>{prod?.name || item.productId}</span>
-                <IconBtn onClick={() => removeSetItem(item.productId)}>✕</IconBtn>
+              <div key={item.id} style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', marginBottom: 7 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: prod?.variants?.length ? 8 : 0 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{prod?.name || item.productId}</span>
+                  <IconBtn onClick={() => removeSetItem(item.id)}>✕</IconBtn>
+                </div>
+                {/* Per variant dimension: lock to one option (flat price below), or leave it for the customer to choose and set this set's own price per option */}
+                {(prod?.variants || []).map(v => {
+                  const locked = !!item.fixedOptions?.[v.id]
+                  return (
+                    <div key={v.id} style={{ marginBottom: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: locked ? 0 : 6 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 60, flexShrink: 0 }}>{v.name}</span>
+                        <Select value={item.fixedOptions?.[v.id] || ''}
+                          onChange={e => {
+                            const fixedOptions = { ...item.fixedOptions }
+                            if (e.target.value) fixedOptions[v.id] = e.target.value
+                            else delete fixedOptions[v.id]
+                            const stillAllFixed = (prod?.variants || []).every(v2 => fixedOptions[v2.id])
+                            // A flat priceOverride only makes sense once every dimension is
+                            // fixed — clear it the moment any dimension is left open again,
+                            // so a stale flat price can never linger as a wrong pre-selection default.
+                            updateSetItem(item.id, stillAllFixed ? { fixedOptions } : { fixedOptions, priceOverride: undefined })
+                          }}
+                          style={{ flex: 1, fontSize: 12 }}>
+                          <option value="">-- ให้ลูกค้าเลือกเอง (ตั้งราคาแยกตามตัวเลือก) --</option>
+                          {v.options.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+                        </Select>
+                      </div>
+                      {/* Customer picks this dimension — price varies by option, specific to this set item */}
+                      {!locked && (
+                        <div style={{ marginLeft: 68, marginTop: 6 }}>
+                          {v.options.map(o => (
+                            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                              <span style={{ fontSize: 12, color: 'var(--text-primary)', flex: 1 }}>{o.label}</span>
+                              <Input type="number"
+                                value={item.variantPriceOverrides?.[v.id]?.[o.label] != null ? String(item.variantPriceOverrides![v.id][o.label]) : ''}
+                                onChange={e => {
+                                  const perVariant = { ...(item.variantPriceOverrides?.[v.id] || {}) }
+                                  if (e.target.value === '') delete perVariant[o.label]
+                                  else perVariant[o.label] = Number(e.target.value)
+                                  updateSetItem(item.id, { variantPriceOverrides: { ...item.variantPriceOverrides, [v.id]: perVariant } })
+                                }}
+                                placeholder={`฿${o.priceOverride ?? prod?.price ?? 0}`} style={{ width: 90, fontSize: 12 }} />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                {(allFixed || noVariants) && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: prod?.variants?.length ? 6 : 8 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', width: 60, flexShrink: 0 }}>ราคา (฿)</span>
+                    <Input type="number" value={item.priceOverride != null ? String(item.priceOverride) : ''}
+                      onChange={e => updateSetItem(item.id, { priceOverride: e.target.value === '' ? undefined : Number(e.target.value) })}
+                      placeholder={`฿${prod?.price ?? 0}`} style={{ width: 100, fontSize: 12 }} />
+                  </div>
+                )}
               </div>
             )
           })}
-          <Select value="" onChange={e => { if (e.target.value) addSetItem(e.target.value) }}>
+          <Select value="" onChange={e => { if (e.target.value) addSetItem(e.target.value) }} style={{ marginBottom: 10 }}>
             <option value="">+ เพิ่มสินค้าเข้าเซ็ต</option>
-            {singleProducts.filter(pr => !(p.setItems || []).find(i => i.productId === pr.id)).map(pr => (
+            {singleProducts.map(pr => (
               <option key={pr.id} value={pr.id}>{pr.name}</option>
             ))}
           </Select>
+          {(p.setItems || []).length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+              <span style={{ color: 'var(--purple)' }}>รวมจากรายการในเซ็ต: <strong>฿{fmt(setItemsSum)}</strong></span>
+              <button onClick={() => setP({ ...p, price: setItemsSum })} disabled={p.price === setItemsSum}
+                style={{ fontSize: 11, background: 'var(--purple-dim)', color: 'var(--purple)', border: '1px solid var(--purple)', borderRadius: 6, padding: '3px 8px', cursor: p.price === setItemsSum ? 'default' : 'pointer', opacity: p.price === setItemsSum ? 0.5 : 1 }}>
+                ใช้ราคานี้
+              </button>
+            </div>
+          )}
         </div>
       )}
 

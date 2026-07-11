@@ -1,4 +1,4 @@
-import type { Product, ProductVariant, CartItem, Submission, FieldCondition, ConditionRule } from '@/types'
+import type { Product, ProductVariant, CartItem, Submission, FieldCondition, ConditionRule, SetItem } from '@/types'
 
 export function uid(): string {
   return Math.random().toString(36).slice(2, 9)
@@ -34,7 +34,12 @@ export function fmt(n: number): string {
   return n.toLocaleString('th-TH')
 }
 
-/** Get all variants for a product, flattening set-item variants with prefix. */
+/** Get all variants for a product, flattening set-item variants with prefix.
+ *  Prefixed by the set item's own `id` (not `productId`) so two instances of
+ *  the same product in one set (e.g. a shirt fixed at S, another at XL) get
+ *  independent variant keys instead of colliding. A variant dimension the
+ *  admin already fixed via `item.fixedOptions` is left out here — it's
+ *  decided, not something the customer picks. */
 export function getProductVariants(prod: Product, allProducts: Product[]): ProductVariant[] {
   if (prod.type === 'single') return prod.variants || []
   if (prod.type === 'set') {
@@ -42,18 +47,64 @@ export function getProductVariants(prod: Product, allProducts: Product[]): Produ
     ;(prod.setItems || []).forEach((item) => {
       const sp = allProducts.find((p) => p.id === item.productId)
       if (sp?.variants?.length) {
-        sp.variants.forEach((v) =>
+        sp.variants.forEach((v) => {
+          if (item.fixedOptions?.[v.id]) return
           all.push({
             ...v,
-            id: `${item.productId}__${v.id}`,
+            id: `${item.id}__${v.id}`,
             name: `${sp.name} – ${v.name}`,
           })
-        )
+        })
       }
     })
     return all
   }
   return []
+}
+
+/** A set only switches to computing its price from its items (instead of the
+ *  flat, manually-typed `price` field) once the admin actually uses the
+ *  per-item features that need it — the same product added twice, or any
+ *  item given its own fixed option/price/variant price table. Plain/legacy
+ *  sets (each item just a bare reference, no per-item config) can never
+ *  match this, so existing deliberate bundle-discount pricing never changes
+ *  underneath anyone. */
+function setUsesComputedPricing(prod: Product): boolean {
+  const items = prod.setItems || []
+  if (items.length === 0) return false
+  const hasDuplicateProduct = new Set(items.map(i => i.productId)).size < items.length
+  const hasPerItemConfig = items.some(i =>
+    i.priceOverride != null ||
+    (i.fixedOptions && Object.keys(i.fixedOptions).length > 0) ||
+    (i.variantPriceOverrides && Object.keys(i.variantPriceOverrides).length > 0)
+  )
+  return hasDuplicateProduct || hasPerItemConfig
+}
+
+/** One set item's price contribution, given whatever the customer picked
+ *  for its (non-fixed) variant dimensions. `priceOverride` (a single flat
+ *  price) only means anything once every variant dimension is fixed to one
+ *  option — if any dimension is still left for the customer to choose, a
+ *  leftover flat override has to be ignored entirely (it's stale data from
+ *  before that dimension was unfixed), or the pre-selection price would be
+ *  a number that was never actually configured for this item. */
+function resolveSetItemPrice(item: SetItem, sp: Product | undefined, selections: Record<string, string>): number {
+  if (!sp) return item.priceOverride ?? 0
+  const allFixed = (sp.variants || []).length > 0 && sp.variants.every((v) => item.fixedOptions?.[v.id])
+  const noVariants = !sp.variants?.length
+  const flatPriceApplies = allFixed || noVariants
+  let price = flatPriceApplies ? (item.priceOverride ?? sp.price) : sp.price
+  ;(sp.variants || []).forEach((v) => {
+    const chosen = item.fixedOptions?.[v.id] || selections[`${item.id}__${v.id}`]
+    if (!chosen) return
+    const setPrice = item.variantPriceOverrides?.[v.id]?.[chosen]
+    if (setPrice != null) { price = setPrice; return }
+    if (flatPriceApplies) {
+      const opt = v.options.find((o) => o.label === chosen)
+      if (opt?.priceOverride != null) price = opt.priceOverride
+    }
+  })
+  return price
 }
 
 /**
@@ -63,12 +114,22 @@ export function getProductVariants(prod: Product, allProducts: Product[]): Produ
  * if more than one selected option happens to carry an override, the last
  * one checked wins. Selections not tied to any priceOverride don't change
  * anything, so this is safe to call even for products with no custom pricing.
+ *
+ * Sets are different: once the admin uses per-item pricing (see
+ * setUsesComputedPricing above), the total is the live sum of each item's
+ * own resolved price instead of the flat `price` field.
  */
 export function getEffectiveUnitPrice(
   prod: Product,
   allProducts: Product[],
   selections: Record<string, string>
 ): number {
+  if (prod.type === 'set' && setUsesComputedPricing(prod)) {
+    return (prod.setItems || []).reduce((sum, item) => {
+      const sp = allProducts.find((p) => p.id === item.productId)
+      return sum + resolveSetItemPrice(item, sp, selections)
+    }, 0)
+  }
   let price = prod.price
   const variants = getProductVariants(prod, allProducts)
   for (const v of variants) {
@@ -215,11 +276,15 @@ export function buildReceiptLines(items: CartItem[]): ReceiptLine[] {
 
     const isSet = pItems[0].isSet
     const name = pItems[0].productName
-    const unitPrice = pItems[0].unitPrice
 
     varGroups.forEach((vItems) => {
       const item = vItems[0]
       const qty = vItems.reduce((s, i) => s + i.qty, 0)
+      // Each variant combo can have its own price (e.g. a set priced per
+      // size), so this has to come from this specific group, not the first
+      // cart line of the whole product — that would silently apply one
+      // combo's price to every other combo of the same product.
+      const unitPrice = item.unitPrice
       const total = unitPrice * qty
 
       // Variant string: join all selected values with " / "

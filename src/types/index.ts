@@ -17,8 +17,31 @@ export interface ProductVariant {
 }
 
 export interface SetItem {
+  id: string          // unique per instance — lets the same product appear more than once in a set
   productId: string
   label: string
+  /** Which option this instance is fixed to, per variant dimension of the
+   *  referenced product (variantId -> option label) — chosen by the admin
+   *  when building the set, not by the customer. Lets two instances of the
+   *  same product represent different configurations (e.g. one "shirt"
+   *  fixed at size S, another fixed at XL). Variants left unfixed here still
+   *  work exactly as before (the customer picks them at add-to-cart time). */
+  fixedOptions?: Record<string, string>
+  /** What this instance contributes to the set's suggested total price —
+   *  independent of the referenced product's own price/overrides, since the
+   *  same item can be priced differently as part of a bundle. Falls back to
+   *  the referenced product's base price when unset. Typically paired with
+   *  `fixedOptions` (a single locked-in option at one flat price); with no
+   *  variants at all it's just this instance's flat contribution. */
+  priceOverride?: number
+  /** Per-option prices for a variant dimension left unfixed here — the
+   *  customer still picks the option normally, but priced from this table
+   *  (variantId -> option label -> price) instead of the referenced
+   *  product's own pricing. E.g. this set's "S" costs ฿20 and "XL" costs
+   *  ฿30, even though the product itself costs ฿25/฿36 sold on its own.
+   *  Options not listed here fall back to the referenced product's own
+   *  price/priceOverride for that option. */
+  variantPriceOverrides?: Record<string, Record<string, number>>
 }
 
 export interface Product {

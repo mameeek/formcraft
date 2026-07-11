@@ -3,8 +3,17 @@
 import { useState, useMemo, useCallback, useRef, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useAppStore, useCartStore } from '@/store'
-import type { CartItem, FormField, Product, ProductVariant, FieldCondition, ConditionRule } from '@/types'
+import type { CartItem, FormField, Product, ProductVariant, FieldCondition, ConditionRule, SetItem } from '@/types'
 import { getProductVariants, getEffectiveUnitPrice, fmt, buildReceiptLines, normalizeCondition } from '@/lib/utils'
+
+// A set item fixed to a specific option (e.g. size = S) shows that in its
+// label — "เสื้อยืด (S)" — so two instances of the same product in a set
+// (one fixed at S, another at XL) read as distinct entries.
+function setItemDisplayLabel(si: SetItem, nameOverride?: string): string {
+  const base = nameOverride || si.label
+  const fixed = Object.values(si.fixedOptions || {})
+  return fixed.length ? `${base} (${fixed.join('/')})` : base
+}
 import { uploadToStorage } from '@/lib/storage'
 import { supabase } from '@/lib/db'
 
@@ -215,7 +224,7 @@ function ProductCard({ prod, virtual, cartItems, accent, cardBg, cardBorder, tex
         <div style={{ fontSize: 13, fontWeight: 700, color: text, lineHeight: 1.35, marginBottom: 4 }}>{name}</div>
         {prod.type === 'set' && (prod.setItems?.length || 0) > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 5 }}>
-            {prod.setItems!.map(si => <span key={si.productId} style={{ fontSize: 10, background: accent + '15', color: accent, borderRadius: 4, padding: '1px 6px' }}>{si.label}</span>)}
+            {prod.setItems!.map(si => <span key={si.id} style={{ fontSize: 10, background: accent + '15', color: accent, borderRadius: 4, padding: '1px 6px' }}>{setItemDisplayLabel(si)}</span>)}
           </div>
         )}
         {prod.tags && prod.tags.length > 0 && (
@@ -279,8 +288,14 @@ function ConfigureModal({ prod, allProducts, accent, cardBg, cardBorder, text, s
       setDetails = (prod.setItems || []).map(si => {
         const sp = allProducts.find(p => p.id === si.productId)
         const labs: string[] = [], codes: string[] = []
+        // Fixed by the admin — always part of this instance's label, no customer choice involved.
+        Object.entries(si.fixedOptions || {}).forEach(([vid, label]) => {
+          const variant = sp?.variants.find(v => v.id === vid)
+          const opt = variant?.options.find(o => o.label === label)
+          labs.push(label); codes.push(opt?.code || label)
+        })
         Object.entries(selections).forEach(([vid, val]) => {
-          if (vid.startsWith(si.productId + '__')) {
+          if (vid.startsWith(si.id + '__')) {
             labs.push(val); codes.push(selCodes[vid] || val)
           }
         })
@@ -318,9 +333,9 @@ function ConfigureModal({ prod, allProducts, accent, cardBg, cardBorder, text, s
                 {prod.setItems!.map(si => {
                   const sp = allProducts.find(p => p.id === si.productId)
                   return (
-                    <div key={si.productId} style={{ display: 'flex', alignItems: 'center', gap: 5, background: accent + '12', border: `1px solid ${accent}28`, borderRadius: 8, padding: '4px 10px' }}>
+                    <div key={si.id} style={{ display: 'flex', alignItems: 'center', gap: 5, background: accent + '12', border: `1px solid ${accent}28`, borderRadius: 8, padding: '4px 10px' }}>
                       {sp?.images?.[0] && <img src={sp.images[0]} alt="" style={{ width: 18, height: 18, borderRadius: 3, objectFit: 'cover' }} />}
-                      <span style={{ fontSize: 12, color: text }}>{sp?.name || si.label}</span>
+                      <span style={{ fontSize: 12, color: text }}>{setItemDisplayLabel(si, sp?.name)}</span>
                     </div>
                   )
                 })}
@@ -343,7 +358,13 @@ function ConfigureModal({ prod, allProducts, accent, cardBg, cardBorder, text, s
             <div style={{ background: cardBg, border: `1px solid ${cardBorder}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
               <div style={{ fontSize: 11, color: subtext, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>ในตะกร้าแล้ว</div>
               {existingItems.map(item => {
-                const varStr = Object.values(item.variantSelections).join(' / ') || prod.name
+                // For sets, variantSelections is keyed per set-item slot and
+                // its insertion order follows whichever size button the
+                // customer happened to click first — not the slots' actual
+                // order — so joining it directly can read in a different
+                // order than the (correctly slot-ordered) setDetails line
+                // below it. Only setDetails is shown for sets to avoid that.
+                const varStr = item.isSet ? prod.name : (Object.values(item.variantSelections).join(' / ') || prod.name)
                 return (
                   <div key={item.cartId} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                     <div style={{ flex: 1, fontSize: 12, color: text, lineHeight: 1.5 }}>
@@ -647,7 +668,12 @@ function CartStep({ items, updateQty, removeItem, subtotal, shippingCost, shippi
 
   const handleMinus = (item: CartItem) => {
     if (item.qty === 1) {
-      const varStr = Object.values(item.variantSelections).join(' / ')
+      // See the note by the other variantSelections joins in this file —
+      // for sets that order doesn't match the slots' real order, so use
+      // setDetails (already slot-ordered) instead when available.
+      const varStr = item.isSet && item.setDetails
+        ? item.setDetails.map(d => d.variantLabel).filter(Boolean).join(' / ')
+        : Object.values(item.variantSelections).join(' / ')
       setDeleteTarget({ cartId: item.cartId, name: `${item.productName}${varStr ? ' · ' + varStr : ''}` })
     } else {
       updateQty(item.cartId, -1)
@@ -665,7 +691,9 @@ function CartStep({ items, updateQty, removeItem, subtotal, shippingCost, shippi
         </div>
       ) : <>
         {items.map(item => {
-          const varStr = Object.values(item.variantSelections).join(' / ')
+          // Sets show their own breakdown via setDetails (below) instead —
+          // see the note on the other variantSelections joins in this file.
+          const varStr = item.isSet ? '' : Object.values(item.variantSelections).join(' / ')
           return (
             <div key={item.cartId} style={{ background: '#fff', border: `1px solid ${cardBorder}`, borderRadius: 12, padding: '12px 14px', marginBottom: 9, display: 'flex', gap: 11, alignItems: 'center' }}>
               <div style={{ width: 50, height: 50, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#f0f0f0' }}>
