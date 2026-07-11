@@ -16,6 +16,8 @@ There is no test suite in this repo (no test framework in `package.json`).
 
 `next.config.js` sets `typescript.ignoreBuildErrors: true` and `eslint.ignoreDuringBuilds: true`, so `npm run build` succeeds even with type errors. Always run `npx tsc --noEmit` yourself after changes and confirm you haven't introduced *new* errors — a handful of pre-existing ones already exist (in `src/app/form/page.tsx` and the unused `src/components/form/ConfigureModal.tsx`, see below) and are safe to ignore.
 
+**Don't run `npm run build` while a `npm run dev` server is running against the same directory** — both write to `.next`, and running them concurrently corrupts the dev server's cache (manifests reference chunks the other process deleted), producing 404s and `PageNotFoundError` on routes that were working fine. If this happens: stop the dev server, `rm -rf .next`, then restart. Same reason to `rm -rf .next` after a one-off `npm run build` check before starting `dev` again.
+
 ## Architecture
 
 ### Static export, no server — Supabase is the entire backend
@@ -44,7 +46,7 @@ RLS for `forms`/`form_permissions` routes through `SECURITY DEFINER` helper func
 
 - `useAppStore` — the *currently loaded* form's data (`form`, `products`, `submissions`, `role`, `currentFormId`/`currentFormSlug`). `loadPublicData(slug)` (products+form only, for the public form) and `loadAdminData(formId)` (adds submissions, admin-only) are separate on purpose — the public form must never fetch submission data.
 - `useFormsStore` — the forms list, creation, and permission management (used by `/forms` and the editor's Permissions tab).
-- `useAuthStore` — Supabase Auth session (email/password + Google OAuth).
+- `useAuthStore` — Supabase Auth session (email/password + Google OAuth). `init()` only flips `initialized: true` once `getSession()`/`onAuthStateChange` actually resolve — flipping it synchronously first (as an earlier version did) meant every page gating on `(initialized, !session)` briefly saw "logged out" on a hard reload of an already-authenticated session, bouncing `/editor`, `/dashboard`, `/submissions` through `/login` and losing the `?f=` target. Don't reintroduce that ordering.
 - `useUnsavedGuard` — Discord-style "you have unsaved changes" guard. The editor registers save/discard handlers here while dirty; `Sidebar` routes all its internal navigation through `guardNavigate()` instead of plain `<Link>` navigation so leaving mid-edit prompts save/discard/cancel.
 - `useCartStore(formKey)` — **a factory, not a singleton.** Each form gets its own `localStorage`-persisted cart (keyed by slug) so carts never leak between forms; always call it with the current form's key, never bare.
 
