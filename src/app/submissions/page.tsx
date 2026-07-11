@@ -5,7 +5,7 @@ import { useAppStore } from '@/store'
 import type { AppStore } from '@/store'
 import type { Submission, PaymentStatus } from '@/types'
 import { Btn, TabBar, Card, StatCard } from '@/components/ui'
-import { fmt, exportSubmissionsCSV, buildReceiptLines } from '@/lib/utils'
+import { fmt, exportSubmissionsCSV, buildReceiptLines, buildRawItemCounts, buildRawItemCodes, buildRawItemCountsForSubmission } from '@/lib/utils'
 
 const STATUS_COLOR: Record<PaymentStatus, string> = {
   pending: 'var(--amber)', confirmed: 'var(--green)', rejected: '#f87171'
@@ -27,6 +27,19 @@ function SlipLightbox({ src, onClose }: { src: string; onClose: () => void }) {
   )
 }
 
+// A cart-item snapshot image that's gone missing (deleted from storage,
+// bad URL, etc.) would otherwise show the browser's native broken-image
+// icon with no way to tell what happened — fall back to the same 📦
+// placeholder used when there's no image at all.
+function ProductThumb({ src, alt }: { src?: string; alt: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 18 }}>📦</div>
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt={alt} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setFailed(true)} />
+}
+
 function SubmissionRow({ sub, onConfirm, form, canConfirm }: {
   sub: Submission
   onConfirm: (id: string, status: PaymentStatus, note?: string) => void
@@ -36,6 +49,7 @@ function SubmissionRow({ sub, onConfirm, form, canConfirm }: {
   const [expanded, setExpanded] = useState(false)
   const [note, setNote] = useState(sub.paymentNote || '')
   const [slipLightbox, setSlipLightbox] = useState(false)
+  const [slipFailed, setSlipFailed] = useState(false)
   const loadSubmissionSlip = useAppStore((s) => s.loadSubmissionSlip)
 
   // The slip image is the expensive part of a submission row — it's only
@@ -81,9 +95,7 @@ function SubmissionRow({ sub, onConfirm, form, canConfirm }: {
                   {(sub.items || []).map((item, i) => (
                     <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 8, background: 'var(--bg-deep)', borderRadius: 9, padding: '9px 12px' }}>
                       <div style={{ width: 36, height: 36, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: 'var(--bg-panel)' }}>
-                        {item.productImages?.[0]
-                          ? <img src={item.productImages[0]} alt={item.productName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 18 }}>📦</div>}
+                        <ProductThumb src={item.productImages?.[0]} alt={item.productName} />
                       </div>
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{item.productName} × {item.qty}</div>
@@ -111,16 +123,26 @@ function SubmissionRow({ sub, onConfirm, form, canConfirm }: {
                     ) : sub.paymentSlip ? (
                       <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>สลิปโอนเงิน</div>
-                        <div>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={sub.paymentSlip} alt="slip"
-                            onClick={() => setSlipLightbox(true)}
-                            style={{ maxWidth: '100%', maxHeight: 130, borderRadius: 8, border: '1px solid var(--border)', display: 'block', cursor: 'zoom-in' }}
-                            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                          />
-                          <button onClick={() => setSlipLightbox(true)} style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--blue)', fontSize: 11, cursor: 'pointer', padding: 0 }}>🔍 ดูรูปเต็ม</button>
-                          {slipLightbox && <SlipLightbox src={sub.paymentSlip} onClose={() => setSlipLightbox(false)} />}
-                        </div>
+                        {slipFailed ? (
+                          // A URL that 404s or fails to load otherwise used to just vanish
+                          // (display:none, no message) — show what actually happened instead,
+                          // with a direct link so the admin isn't stuck with no way to check it.
+                          <div style={{ fontSize: 12, color: '#f87171', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            ⚠ โหลดรูปสลิปไม่สำเร็จ
+                            <a href={sub.paymentSlip} target="_blank" rel="noreferrer" style={{ color: 'var(--blue)' }}>เปิดลิงก์โดยตรง ↗</a>
+                          </div>
+                        ) : (
+                          <div>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={sub.paymentSlip} alt="slip"
+                              onClick={() => setSlipLightbox(true)}
+                              style={{ maxWidth: '100%', maxHeight: 130, borderRadius: 8, border: '1px solid var(--border)', display: 'block', cursor: 'zoom-in' }}
+                              onError={() => setSlipFailed(true)}
+                            />
+                            <button onClick={() => setSlipLightbox(true)} style={{ marginTop: 6, background: 'none', border: 'none', color: 'var(--blue)', fontSize: 11, cursor: 'pointer', padding: 0 }}>🔍 ดูรูปเต็ม</button>
+                            {slipLightbox && <SlipLightbox src={sub.paymentSlip} onClose={() => setSlipLightbox(false)} />}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>ไม่มีสลิป</div>
@@ -258,7 +280,9 @@ function CsvView({ submissions, products, form }: {
     }).join(";") || "0"
   }
 
-  const headers = [...formFields.map(f => f.label), "จัดส่ง", "ยอดรวม", "สถานะ", ...singleProds.map(p => p.code), ...setProds.map(p => p.code)]
+  const rawCodes = buildRawItemCodes(products)
+  const rawHeaders = rawCodes.map(c => `__raw_${c}`)
+  const headers = [...formFields.map(f => f.label), "จัดส่ง", "ยอดรวม", "สถานะ", ...singleProds.map(p => p.code), ...setProds.map(p => p.code), ...rawHeaders]
 
   return (
     <div>
@@ -281,7 +305,7 @@ function CsvView({ submissions, products, form }: {
           <thead>
             <tr style={{ background: "var(--bg-deep)" }}>
               {headers.map(h => (
-                <th key={h} style={{ ...th, fontFamily: /^[a-z_]+$/.test(h) ? "monospace" : "inherit", fontSize: /^[a-z_]+$/.test(h) ? 10 : 12 }}>{h}</th>
+                <th key={h} style={{ ...th, fontFamily: /^[a-z0-9_]+$/.test(h) ? "monospace" : "inherit", fontSize: /^[a-z0-9_]+$/.test(h) ? 10 : 12 }}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -297,6 +321,17 @@ function CsvView({ submissions, products, form }: {
                     {buildProductCol(sub, prod)}
                   </td>
                 ))}
+                {/* One column per raw product+variant code, sets broken apart
+                    into their real components — separate from the per-product
+                    columns above, which keep sets bundled. */}
+                {(() => {
+                  const rawCounts = buildRawItemCountsForSubmission(sub)
+                  return rawCodes.map(code => (
+                    <td key={code} style={{ ...td, fontFamily: "monospace", fontSize: 10, color: "var(--purple)" }}>
+                      {rawCounts[code] || 0}
+                    </td>
+                  ))
+                })()}
               </tr>
             ))}
           </tbody>
@@ -327,6 +362,7 @@ function SummaryView({ submissions, products }: { submissions: Submission[]; pro
     })
   })
   const productList = Object.entries(productMap).sort((a, b) => b[1].count - a[1].count)
+  const rawItems = useMemo(() => buildRawItemCounts(submissions), [submissions])
 
   return (
     <div>
@@ -351,6 +387,28 @@ function SummaryView({ submissions, products }: { submissions: Submission[]; pro
             <span style={{ fontSize: 13 }}>{d.name}</span>
             <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--purple)', fontWeight: 700 }}>{d.count} ชิ้น</span>
             <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>฿{fmt(d.revenue)}</span>
+          </div>
+        ))}
+      </Card>
+
+      <Card style={{ marginTop: 16 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 4 }}>สรุปสำหรับจัดส่ง/เตรียมของ</h3>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+          แยกเซ็ตออกเป็นรายชิ้น เช่น เซ็ตที่มี 2 ตัวไซส์ต่างกัน จะนับแยกตามไซส์จริง — ไว้ดูว่าต้องเตรียมของแต่ละแบบกี่ชิ้นรวมทั้งหมด
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px', marginBottom: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>รายการ</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textAlign: 'right' }}>จำนวน</span>
+        </div>
+        {rawItems.length === 0 ? (
+          <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>ยังไม่มีข้อมูล</div>
+        ) : rawItems.map(item => (
+          <div key={item.code} style={{ display: 'grid', gridTemplateColumns: '1fr 80px', padding: '9px 0', borderBottom: '1px solid var(--border)', alignItems: 'center' }}>
+            <span style={{ fontSize: 13 }}>
+              {item.label}
+              <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)', marginLeft: 8 }}>{item.code}</span>
+            </span>
+            <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--purple)', fontWeight: 700 }}>{item.count} ชิ้น</span>
           </div>
         ))}
       </Card>

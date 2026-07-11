@@ -147,6 +147,50 @@ export function buildItemCode(item: CartItem): string {
   return codes ? `${item.productCode}_${codes}` : item.productCode
 }
 
+/**
+ * One submission's cart flattened to raw product+variant codes, set
+ * contents broken apart into their real components — e.g. a set line with
+ * two jackets (2XL + 2XL) contributes to the same `jacket_2xl` count as a
+ * standalone 2XL jacket would. Merges duplicates within this submission
+ * (two separate set instances both containing a 2XL jacket combine into
+ * one count of 2). Used to fill one `__raw_<code>` column per code (see
+ * buildRawItemCodes) — independent of the per-product columns, which keep
+ * sets bundled.
+ */
+export function buildRawItemCountsForSubmission(sub: Submission): Record<string, number> {
+  const counts: Record<string, number> = {}
+  ;(sub.items || []).forEach(item => {
+    if (item.isSet && item.setDetails?.length) {
+      item.setDetails.forEach(d => {
+        const code = d.variantCode ? `${d.productCode}_${d.variantCode}` : d.productCode
+        counts[code] = (counts[code] || 0) + item.qty
+      })
+    } else {
+      const variantCodes = Object.values(item.variantCodes).filter(Boolean).join('_')
+      const code = variantCodes ? `${item.productCode}_${variantCodes}` : item.productCode
+      counts[code] = (counts[code] || 0) + item.qty
+    }
+  })
+  return counts
+}
+
+/**
+ * The full universe of raw product+variant codes for a catalog — every
+ * single product's own options (a set is always built from single
+ * products, so this already covers whatever shows up broken out of a set
+ * too; no separate enumeration needed). Used to give every submission row
+ * the same fixed set of `__raw_<code>` columns regardless of what that
+ * particular row happens to contain.
+ */
+export function buildRawItemCodes(products: Product[]): string[] {
+  const codes: string[] = []
+  products.filter(p => p.type === 'single').forEach(p => {
+    if (!p.variants.length) { codes.push(p.code); return }
+    p.variants.forEach(v => v.options.forEach(o => codes.push(`${p.code}_${o.code}`)))
+  })
+  return codes
+}
+
 /** Export submissions as CSV with per-product columns */
 export function exportSubmissionsCSV(
   submissions: Submission[],
@@ -166,8 +210,13 @@ export function exportSubmissionsCSV(
     ...singleProducts.map(p => p.code),
     ...setProducts.map(p => p.code),
   ]
+  // One column per raw product+variant code, independent of the per-product
+  // columns above — those keep sets bundled, these break every set apart
+  // into its raw components for shipping/production counts.
+  const rawCodes = buildRawItemCodes(products)
+  const rawHeaders = rawCodes.map(c => `__raw_${c}`)
 
-  const headerRow = [...baseHeaders, ...productHeaders]
+  const headerRow = [...baseHeaders, ...productHeaders, ...rawHeaders]
 
   const dataRows = rows.map(sub => {
     const fieldVals = formFields.length
@@ -208,7 +257,10 @@ export function exportSubmissionsCSV(
       }
     })
 
-    return [...base, ...productCols]
+    const rawCounts = buildRawItemCountsForSubmission(sub)
+    const rawCols = rawCodes.map(c => rawCounts[c] || 0)
+
+    return [...base, ...productCols, ...rawCols]
   })
 
   const csv = [headerRow, ...dataRows]
@@ -314,4 +366,45 @@ export function buildReceiptLines(items: CartItem[]): ReceiptLine[] {
   })
 
   return lines
+}
+
+export interface RawItemCount {
+  code: string    // e.g. "jacket_2xl" — matches the codes used in CSV export columns
+  label: string   // human-readable, e.g. "MWIT Jacket: 2XL"
+  count: number
+}
+
+/**
+ * Flattens every cart item across a set of submissions down to raw
+ * product+variant units — a set line like "2 jackets (S + M)" contributes
+ * one count each to jacket_s and jacket_m, same as if they'd been bought
+ * standalone. Meant for shipping/production: "how many 2XL jackets do I
+ * need in total", regardless of which bundle they were ordered as part of.
+ */
+export function buildRawItemCounts(submissions: Submission[]): RawItemCount[] {
+  const counts: Record<string, RawItemCount> = {}
+  const add = (code: string, label: string, qty: number) => {
+    if (!counts[code]) counts[code] = { code, label, count: 0 }
+    counts[code].count += qty
+  }
+
+  submissions.forEach(sub => {
+    ;(sub.items || []).forEach(item => {
+      if (item.isSet && item.setDetails?.length) {
+        item.setDetails.forEach(d => {
+          const code = d.variantCode ? `${d.productCode}_${d.variantCode}` : d.productCode
+          const label = d.variantLabel ? `${d.productName}: ${d.variantLabel}` : d.productName
+          add(code, label, item.qty)
+        })
+      } else {
+        const variantCodes = Object.values(item.variantCodes).filter(Boolean).join('_')
+        const code = variantCodes ? `${item.productCode}_${variantCodes}` : item.productCode
+        const variantLabels = Object.values(item.variantSelections).join(' / ')
+        const label = variantLabels ? `${item.productName}: ${variantLabels}` : item.productName
+        add(code, label, item.qty)
+      }
+    })
+  })
+
+  return Object.values(counts).sort((a, b) => b.count - a.count)
 }
